@@ -285,11 +285,41 @@ const emptyPurchase = {
 function normalizeData(data) {
   const settings = { ...seedData.settings, ...data?.settings };
   settings.theme = themeAliases[settings.theme] || (supportedThemes.includes(settings.theme) ? settings.theme : seedData.settings.theme);
+  const transactions = Array.isArray(data?.transactions) ? data.transactions : seedData.transactions;
+  const transactionById = new Map(transactions.map((transaction) => [transaction.id, transaction]));
+  const rawPurchases = Array.isArray(data?.purchases) ? data.purchases : seedData.purchases;
+  const purchases = rawPurchases.map((purchase) => {
+    if (purchase.status !== 'purchased') return purchase;
+
+    const linkedTransaction = purchase.purchaseTransactionId
+      ? transactionById.get(purchase.purchaseTransactionId)
+      : transactions.find(
+          (transaction) =>
+            transaction.sourcePurchaseId === purchase.id ||
+            (transaction.notes?.includes('Compra registrada a partir da galeria de desejos') &&
+              transaction.title === purchase.name &&
+              Number(transaction.amount) === Number(purchase.targetPrice))
+        );
+
+    if (linkedTransaction) {
+      return {
+        ...purchase,
+        purchaseTransactionId: linkedTransaction.id
+      };
+    }
+
+    return {
+      ...purchase,
+      status: 'planned',
+      purchasedAt: undefined,
+      purchaseTransactionId: undefined
+    };
+  });
 
   return {
     settings,
-    transactions: Array.isArray(data?.transactions) ? data.transactions : seedData.transactions,
-    purchases: Array.isArray(data?.purchases) ? data.purchases : seedData.purchases
+    transactions,
+    purchases
   };
 }
 

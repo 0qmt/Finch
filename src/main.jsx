@@ -808,6 +808,13 @@ function LogoMark() {
 }
 
 function OnboardingPage({ onComplete }) {
+  const steps = [
+    { title: 'Boas-vindas', text: 'Seu nome e objetivo' },
+    { title: 'Renda', text: 'Base do planejamento' },
+    { title: 'Categorias', text: 'Sua rotina financeira' },
+    { title: 'Pronto', text: 'Começar limpo' }
+  ];
+  const [step, setStep] = useState(0);
   const [form, setForm] = useState({
     userName: '',
     salary: '',
@@ -819,9 +826,10 @@ function OnboardingPage({ onComplete }) {
   });
   const [customCategory, setCustomCategory] = useState('');
 
-  const canContinue = form.userName.trim().length >= 2;
+  const canContinue = step !== 0 || form.userName.trim().length >= 2;
   const salary = form.salaryIsVariable ? 0 : Number(form.salary || 0);
   const suggestedBudget = form.monthlyBudget ? Number(form.monthlyBudget) : Math.round(salary * 0.75);
+  const progress = ((step + 1) / steps.length) * 100;
 
   const updateField = (field, value) => {
     setForm((current) => ({ ...current, [field]: value }));
@@ -850,7 +858,7 @@ function OnboardingPage({ onComplete }) {
   };
 
   const finish = () => {
-    if (!canContinue) return;
+    if (form.userName.trim().length < 2) return;
 
     onComplete({
       userName: form.userName.trim(),
@@ -863,136 +871,224 @@ function OnboardingPage({ onComplete }) {
     });
   };
 
+  const nextStep = () => {
+    if (!canContinue) return;
+    if (step === steps.length - 1) {
+      finish();
+      return;
+    }
+
+    setStep((current) => Math.min(steps.length - 1, current + 1));
+  };
+
+  const previousStep = () => {
+    setStep((current) => Math.max(0, current - 1));
+  };
+
   return (
     <main className="onboarding-shell">
-      <section className="onboarding-card">
-        <div className="onboarding-brand">
-          <LogoMark />
-          <div>
-            <p className="brand-name">finch</p>
-            <span>Seu dinheiro, seu futuro.</span>
-          </div>
-        </div>
-
-        <div className="onboarding-copy">
-          <p className="eyebrow">Primeiros passos</p>
-          <h1>Vamos deixar o Finch com a sua cara.</h1>
-          <p>Algumas respostas rápidas ajudam o app a começar limpo, com orçamento e projeções mais próximas da sua realidade.</p>
-        </div>
-
-        <div className="onboarding-form">
-          <label>
-            <span>Como podemos chamar você?</span>
-            <input
-              value={form.userName}
-              onChange={(event) => updateField('userName', event.target.value)}
-              placeholder="Ex.: João"
-              autoFocus
-            />
-          </label>
-
-          <label>
-            <span>Quanto você ganha por mês?</span>
-            <input
-              type="number"
-              min="0"
-              value={form.salary}
-              disabled={form.salaryIsVariable}
-              onChange={(event) => updateField('salary', event.target.value)}
-              placeholder="Ex.: 3500"
-            />
-          </label>
-
-          <label className="check-row">
-            <input
-              type="checkbox"
-              checked={form.salaryIsVariable}
-              onChange={(event) => updateField('salaryIsVariable', event.target.checked)}
-            />
-            <span>Meu salário não é fixo, pular por enquanto</span>
-          </label>
-
-          <label>
-            <span>Qual orçamento mensal você quer acompanhar?</span>
-            <input
-              type="number"
-              min="0"
-              value={form.monthlyBudget}
-              onChange={(event) => updateField('monthlyBudget', event.target.value)}
-              placeholder={salary ? `Sugestão: ${Math.round(salary * 0.75)}` : 'Ex.: 2500'}
-            />
-          </label>
-
-          <label>
-            <span>Conta principal</span>
-            <input
-              value={form.mainAccount}
-              onChange={(event) => updateField('mainAccount', event.target.value)}
-              placeholder="Ex.: Nubank, Inter, Carteira"
-            />
-          </label>
-
-          <label>
-            <span>Seu foco agora</span>
-            <select value={form.planningGoal} onChange={(event) => updateField('planningGoal', event.target.value)}>
-              <option>Organizar meu dinheiro</option>
-              <option>Reduzir gastos</option>
-              <option>Planejar compras futuras</option>
-              <option>Criar reserva financeira</option>
-              <option>Acompanhar parcelas e compromissos</option>
-            </select>
-          </label>
-
-          <div className="onboarding-categories">
+      <section className="onboarding-card stepped">
+        <div className="onboarding-side">
+          <div className="onboarding-brand">
+            <LogoMark />
             <div>
-              <span>Categorias que combinam com sua rotina</span>
-              <p>Escolha as que você quer ver no app. Dá para editar tudo depois.</p>
+              <p className="brand-name">finch</p>
+              <span>Seu dinheiro, seu futuro.</span>
             </div>
-            <div className="category-picker">
-              {onboardingCategoryOptions.map((category) => (
-                <button
-                  key={category}
-                  className={form.categories.includes(category) ? 'category-chip selected' : 'category-chip'}
-                  type="button"
-                  onClick={() => toggleCategory(category)}
-                >
-                  {form.categories.includes(category) && <Check size={14} />}
-                  {category}
-                </button>
-              ))}
-            </div>
-            <div className="custom-category-row">
-              <input
-                value={customCategory}
-                onChange={(event) => setCustomCategory(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter') {
-                    event.preventDefault();
-                    addCustomCategory();
+          </div>
+
+          <div className="step-track" aria-label="Etapas da introdução">
+            {steps.map((item, index) => (
+              <button
+                key={item.title}
+                className={index === step ? 'step-item active' : index < step ? 'step-item done' : 'step-item'}
+                type="button"
+                onClick={() => {
+                  if (index <= step || form.userName.trim().length >= 2) {
+                    setStep(index);
                   }
                 }}
-                placeholder="Adicionar categoria manualmente"
-              />
-              <button className="secondary-button" type="button" onClick={addCustomCategory}>
-                Adicionar
+              >
+                <span>{index < step ? <Check size={14} /> : index + 1}</span>
+                <strong>{item.title}</strong>
+                <small>{item.text}</small>
               </button>
-            </div>
+            ))}
           </div>
         </div>
 
-        <div className="onboarding-actions">
-          <button className="secondary-button" type="button" onClick={() => updateField('salaryIsVariable', true)}>
-            Pular renda fixa
-          </button>
-          <button className="primary-button" type="button" disabled={!canContinue} onClick={finish}>
-            Começar
-          </button>
+        <div className="onboarding-stage">
+          <div className="onboarding-progress" aria-hidden="true">
+            <span style={{ width: `${progress}%` }} />
+          </div>
+
+          {step === 0 && (
+            <div className="onboarding-step" key="intro">
+              <div className="onboarding-copy">
+                <p className="eyebrow">Etapa 1 de 4</p>
+                <h1>Vamos deixar o Finch com a sua cara.</h1>
+                <p>Começamos pelo básico: seu nome e o que você quer organizar primeiro.</p>
+              </div>
+
+              <div className="onboarding-form single">
+                <label className="field-pop">
+                  <span>Como podemos chamar você?</span>
+                  <input
+                    value={form.userName}
+                    onChange={(event) => updateField('userName', event.target.value)}
+                    placeholder="Ex.: João"
+                    autoFocus
+                  />
+                </label>
+
+                <label className="field-pop delay-1">
+                  <span>Seu foco agora</span>
+                  <select value={form.planningGoal} onChange={(event) => updateField('planningGoal', event.target.value)}>
+                    <option>Organizar meu dinheiro</option>
+                    <option>Reduzir gastos</option>
+                    <option>Planejar compras futuras</option>
+                    <option>Criar reserva financeira</option>
+                    <option>Acompanhar parcelas e compromissos</option>
+                  </select>
+                </label>
+              </div>
+            </div>
+          )}
+
+          {step === 1 && (
+            <div className="onboarding-step" key="money">
+              <div className="onboarding-copy">
+                <p className="eyebrow">Etapa 2 de 4</p>
+                <h1>Qual é a sua base mensal?</h1>
+                <p>Isso ajuda o Finch a calcular orçamento e projeções sem julgamento, só clareza.</p>
+              </div>
+
+              <div className="onboarding-form">
+                <label className="field-pop">
+                  <span>Quanto você ganha por mês?</span>
+                  <input
+                    type="number"
+                    min="0"
+                    value={form.salary}
+                    disabled={form.salaryIsVariable}
+                    onChange={(event) => updateField('salary', event.target.value)}
+                    placeholder="Ex.: 3500"
+                  />
+                </label>
+
+                <label className="field-pop delay-1">
+                  <span>Orçamento mensal para acompanhar</span>
+                  <input
+                    type="number"
+                    min="0"
+                    value={form.monthlyBudget}
+                    onChange={(event) => updateField('monthlyBudget', event.target.value)}
+                    placeholder={salary ? `Sugestão: ${Math.round(salary * 0.75)}` : 'Ex.: 2500'}
+                  />
+                </label>
+
+                <label className="field-pop delay-2">
+                  <span>Conta principal</span>
+                  <input
+                    value={form.mainAccount}
+                    onChange={(event) => updateField('mainAccount', event.target.value)}
+                    placeholder="Ex.: Nubank, Inter, Carteira"
+                  />
+                </label>
+
+                <label className="check-row field-pop delay-3">
+                  <input
+                    type="checkbox"
+                    checked={form.salaryIsVariable}
+                    onChange={(event) => updateField('salaryIsVariable', event.target.checked)}
+                  />
+                  <span>Meu salário não é fixo, pular por enquanto</span>
+                </label>
+              </div>
+            </div>
+          )}
+
+          {step === 2 && (
+            <div className="onboarding-step" key="categories">
+              <div className="onboarding-copy">
+                <p className="eyebrow">Etapa 3 de 4</p>
+                <h1>Quais categorias fazem sentido para você?</h1>
+                <p>Escolha as áreas que aparecem na sua rotina. Dá para editar tudo depois.</p>
+              </div>
+
+              <div className="onboarding-categories field-pop">
+                <div className="category-picker">
+                  {onboardingCategoryOptions.map((category, index) => (
+                    <button
+                      key={category}
+                      className={form.categories.includes(category) ? 'category-chip selected' : 'category-chip'}
+                      style={{ '--delay': `${index * 22}ms` }}
+                      type="button"
+                      onClick={() => toggleCategory(category)}
+                    >
+                      {form.categories.includes(category) && <Check size={14} />}
+                      {category}
+                    </button>
+                  ))}
+                </div>
+                <div className="custom-category-row">
+                  <input
+                    value={customCategory}
+                    onChange={(event) => setCustomCategory(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter') {
+                        event.preventDefault();
+                        addCustomCategory();
+                      }
+                    }}
+                    placeholder="Adicionar categoria manualmente"
+                  />
+                  <button className="secondary-button" type="button" onClick={addCustomCategory}>
+                    Adicionar
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {step === 3 && (
+            <div className="onboarding-step" key="finish">
+              <div className="onboarding-copy">
+                <p className="eyebrow">Etapa 4 de 4</p>
+                <h1>Tudo pronto para começar.</h1>
+                <p>O Finch vai abrir limpo, com suas categorias e preferências iniciais preparadas.</p>
+              </div>
+
+              <div className="onboarding-summary">
+                <div className="summary-tile field-pop">
+                  <span>Nome</span>
+                  <strong>{form.userName || 'Você'}</strong>
+                </div>
+                <div className="summary-tile field-pop delay-1">
+                  <span>Renda</span>
+                  <strong>{form.salaryIsVariable ? 'Variável' : salary ? currency.format(salary) : 'Não informada'}</strong>
+                </div>
+                <div className="summary-tile field-pop delay-2">
+                  <span>Categorias</span>
+                  <strong>{form.categories.length}</strong>
+                </div>
+              </div>
+            </div>
+          )}
+
+          <div className="onboarding-actions">
+            <button className="secondary-button" type="button" disabled={step === 0} onClick={previousStep}>
+              Voltar
+            </button>
+            <button className="primary-button" type="button" disabled={!canContinue} onClick={nextStep}>
+              {step === steps.length - 1 ? 'Começar' : 'Continuar'}
+            </button>
+          </div>
         </div>
       </section>
     </main>
   );
 }
-
 function Sidebar({ activePage, setActivePage, metrics }) {
   return (
     <aside className="sidebar">

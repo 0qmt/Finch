@@ -104,34 +104,168 @@ img {
 }
 
 .onboarding-card {
-  width: min(760px, 100%);
-  padding: clamp(24px, 4vw, 44px);
+  width: min(960px, 100%);
+  min-height: min(680px, calc(100vh - 44px));
+  padding: clamp(18px, 3vw, 32px);
   border: 1px solid var(--line);
   border-radius: 30px;
   background: var(--surface);
   box-shadow: var(--shadow);
   backdrop-filter: var(--chrome-blur);
-  animation: pageIn 160ms cubic-bezier(0.2, 0, 0, 1);
+  animation: pageIn 180ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+.onboarding-card.stepped {
+  display: grid;
+  grid-template-columns: minmax(220px, 0.76fr) minmax(0, 1.42fr);
+  gap: clamp(18px, 3vw, 34px);
+  overflow: hidden;
+}
+
+.onboarding-side {
+  display: grid;
+  align-content: start;
+  gap: 36px;
+  min-width: 0;
+  padding: 18px;
+  border-radius: 24px;
+  background:
+    linear-gradient(180deg, rgba(0, 122, 255, 0.1), transparent 58%),
+    rgba(118, 118, 128, 0.08);
 }
 
 .onboarding-brand {
   display: flex;
   align-items: center;
   gap: 14px;
-  margin-bottom: 34px;
+}
+
+.step-track {
+  position: relative;
+  display: grid;
+  gap: 12px;
+}
+
+.step-track::before {
+  position: absolute;
+  top: 24px;
+  bottom: 24px;
+  left: 19px;
+  width: 1px;
+  content: '';
+  background: var(--line);
+}
+
+.step-item {
+  position: relative;
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr);
+  gap: 0 12px;
+  min-height: 58px;
+  padding: 10px 10px 10px 0;
+  border: 0;
+  border-radius: 18px;
+  color: var(--muted);
+  text-align: left;
+  background: transparent;
+  transition:
+    transform 180ms cubic-bezier(0.2, 0, 0, 1),
+    background 180ms ease,
+    color 180ms ease;
+}
+
+.step-item:hover,
+.step-item.active {
+  transform: translateX(4px);
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.42);
+}
+
+.theme-grafite .step-item:hover,
+.theme-grafite .step-item.active {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.step-item > span {
+  z-index: 1;
+  display: grid;
+  width: 38px;
+  height: 38px;
+  grid-row: span 2;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  color: var(--muted);
+  background: var(--surface-solid);
+  font-size: 0.82rem;
+  font-weight: 900;
+  transition:
+    transform 220ms cubic-bezier(0.2, 0, 0, 1),
+    color 160ms ease,
+    background 160ms ease;
+}
+
+.step-item.active > span,
+.step-item.done > span {
+  transform: scale(1.08);
+  color: #fff;
+  border-color: transparent;
+  background: var(--accent);
+}
+
+.step-item strong {
+  align-self: end;
+  font-size: 0.92rem;
+}
+
+.step-item small {
+  color: var(--quiet);
+  font-size: 0.76rem;
+}
+
+.onboarding-stage {
+  position: relative;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  min-width: 0;
+  padding: clamp(14px, 2vw, 20px) clamp(2px, 1vw, 10px);
+}
+
+.onboarding-progress {
+  height: 7px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(118, 118, 128, 0.14);
+}
+
+.onboarding-progress span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+  transition: width 420ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.onboarding-step {
+  display: grid;
+  align-content: center;
+  gap: 26px;
+  min-height: 470px;
+  padding: clamp(18px, 4vw, 42px) 0 22px;
+  animation: stepEnter 420ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 .onboarding-copy {
-  max-width: 610px;
-  margin-bottom: 28px;
+  max-width: 620px;
 }
 
 .onboarding-copy h1 {
   margin: 8px 0 12px;
   color: var(--text);
-  font-size: clamp(2.05rem, 4vw, 3.7rem);
-  line-height: 0.98;
+  font-size: clamp(2.1rem, 4.1vw, 4.35rem);
+  line-height: 0.96;
   letter-spacing: -0.025em;
+  animation: titleSweep 480ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 .onboarding-copy p:last-child {
@@ -139,12 +273,18 @@ img {
   color: var(--muted);
   font-size: 1.02rem;
   line-height: 1.6;
+  animation: softRise 460ms 80ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 .onboarding-form {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 16px;
+}
+
+.onboarding-form.single {
+  grid-template-columns: minmax(0, 1fr);
+  max-width: 520px;
 }
 
 .onboarding-form label {
@@ -156,25 +296,49 @@ img {
 }
 
 .onboarding-form input,
-.onboarding-form select {
+.onboarding-form select,
+.custom-category-row input {
   width: 100%;
-  min-height: 50px;
+  min-height: 52px;
   border: 1px solid var(--line);
-  border-radius: 16px;
+  border-radius: 17px;
   padding: 0 15px;
   color: var(--text);
   background: rgba(118, 118, 128, 0.09);
   outline: none;
+  transition:
+    transform 140ms cubic-bezier(0.2, 0, 0, 1),
+    border-color 140ms ease,
+    box-shadow 140ms ease,
+    background 140ms ease;
 }
 
 .onboarding-form input:focus,
-.onboarding-form select:focus {
+.onboarding-form select:focus,
+.custom-category-row input:focus {
+  transform: translateY(-1px);
   border-color: rgba(0, 122, 255, 0.45);
   box-shadow: 0 0 0 4px var(--accent-soft);
 }
 
 .onboarding-form input:disabled {
   opacity: 0.54;
+}
+
+.field-pop {
+  animation: softRise 420ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.delay-1 {
+  animation-delay: 80ms;
+}
+
+.delay-2 {
+  animation-delay: 150ms;
+}
+
+.delay-3 {
+  animation-delay: 220ms;
 }
 
 .check-row {
@@ -192,22 +356,8 @@ img {
 }
 
 .onboarding-categories {
-  grid-column: 1 / -1;
   display: grid;
-  gap: 14px;
-  padding-top: 4px;
-}
-
-.onboarding-categories span {
-  color: var(--muted);
-  font-size: 0.82rem;
-  font-weight: 800;
-}
-
-.onboarding-categories p {
-  margin: 5px 0 0;
-  color: var(--quiet);
-  font-size: 0.9rem;
+  gap: 16px;
 }
 
 .category-picker {
@@ -220,7 +370,7 @@ img {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  min-height: 36px;
+  min-height: 38px;
   padding: 0 13px;
   border: 1px solid var(--line);
   border-radius: 999px;
@@ -228,15 +378,17 @@ img {
   background: rgba(118, 118, 128, 0.08);
   font-size: 0.86rem;
   font-weight: 800;
+  animation: chipPop 340ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation-delay: var(--delay, 0ms);
   transition:
-    transform 105ms cubic-bezier(0.2, 0, 0, 1),
-    color 105ms ease,
-    background 105ms ease,
-    border-color 105ms ease;
+    transform 140ms cubic-bezier(0.2, 0, 0, 1),
+    color 140ms ease,
+    background 140ms ease,
+    border-color 140ms ease;
 }
 
 .category-chip:hover {
-  transform: translateY(-1px);
+  transform: translateY(-2px) scale(1.02);
   border-color: var(--line-strong);
 }
 
@@ -252,13 +404,93 @@ img {
   gap: 10px;
 }
 
+.onboarding-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.summary-tile {
+  min-width: 0;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: rgba(118, 118, 128, 0.08);
+}
+
+.summary-tile span {
+  display: block;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.summary-tile strong {
+  display: block;
+  margin-top: 8px;
+  color: var(--text);
+  font-size: 1.2rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .onboarding-actions {
   display: flex;
   justify-content: flex-end;
   gap: 12px;
-  margin-top: 26px;
+  margin-top: 18px;
 }
 
+@keyframes stepEnter {
+  from {
+    opacity: 0;
+    transform: translateX(34px) scale(0.985);
+    filter: blur(8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+    filter: blur(0);
+  }
+}
+
+@keyframes titleSweep {
+  from {
+    opacity: 0;
+    transform: translateY(18px) scale(0.975);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes softRise {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes chipPop {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.92);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
 .theme-grafite {
   color-scheme: dark;
   --bg: #0b0b0f;
@@ -1977,6 +2209,34 @@ img {
     grid-template-columns: 1fr;
   }
 
+  .onboarding-card.stepped {
+    grid-template-columns: 1fr;
+  }
+
+  .onboarding-side {
+    gap: 18px;
+  }
+
+  .step-track {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .step-track::before {
+    display: none;
+  }
+
+  .step-item {
+    grid-template-columns: 1fr;
+    justify-items: center;
+    min-height: 92px;
+    padding: 10px;
+    text-align: center;
+  }
+
+  .step-item > span {
+    grid-row: auto;
+  }
+
   .sidebar {
     position: relative;
     height: auto;
@@ -2150,6 +2410,14 @@ img {
   }
 
   .custom-category-row {
+    grid-template-columns: 1fr;
+  }
+
+  .step-track {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .onboarding-summary {
     grid-template-columns: 1fr;
   }
 }

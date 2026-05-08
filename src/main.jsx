@@ -106,6 +106,10 @@ const capitalize = (value) => value.charAt(0).toUpperCase() + value.slice(1);
 const seedData = {
   settings: {
     theme: 'iOS claro',
+    userName: '',
+    onboardingCompleted: false,
+    salaryIsVariable: false,
+    planningGoal: 'Organizar meu dinheiro',
     monthlyBudget: 5200,
     salary: 7800,
     categories: ['Moradia', 'Mercado', 'Transporte', 'Lazer', 'Saúde', 'Educação', 'Viagem', 'Tecnologia'],
@@ -250,6 +254,21 @@ const seedData = {
   ]
 };
 
+const createEmptyData = (settings = {}) => ({
+  settings: {
+    ...seedData.settings,
+    monthlyBudget: 0,
+    salary: 0,
+    userName: '',
+    onboardingCompleted: false,
+    salaryIsVariable: false,
+    planningGoal: 'Organizar meu dinheiro',
+    ...settings
+  },
+  transactions: [],
+  purchases: []
+});
+
 const navItems = [
   { id: 'overview', label: 'Visão geral', icon: LayoutDashboard },
   { id: 'wallet', label: 'Carteira / Extrato', icon: WalletCards },
@@ -286,9 +305,11 @@ const emptyPurchase = {
 function normalizeData(data) {
   const settings = { ...seedData.settings, ...data?.settings };
   settings.theme = themeAliases[settings.theme] || (supportedThemes.includes(settings.theme) ? settings.theme : seedData.settings.theme);
-  const transactions = Array.isArray(data?.transactions) ? data.transactions : seedData.transactions;
+  settings.onboardingCompleted =
+    data?.settings?.onboardingCompleted ?? Boolean(data?.transactions?.length || data?.purchases?.length);
+  const transactions = Array.isArray(data?.transactions) ? data.transactions : [];
   const transactionById = new Map(transactions.map((transaction) => [transaction.id, transaction]));
-  const rawPurchases = Array.isArray(data?.purchases) ? data.purchases : seedData.purchases;
+  const rawPurchases = Array.isArray(data?.purchases) ? data.purchases : [];
   const purchases = rawPurchases.map((purchase) => {
     if (purchase.status !== 'purchased') return purchase;
 
@@ -347,9 +368,9 @@ function snoozeUpdatesFor24h() {
 function loadData() {
   try {
     const stored = localStorage.getItem(STORAGE_KEY);
-    return stored ? normalizeData(JSON.parse(stored)) : seedData;
+    return stored ? normalizeData(JSON.parse(stored)) : createEmptyData();
   } catch {
-    return seedData;
+    return createEmptyData();
   }
 }
 
@@ -362,6 +383,7 @@ function App() {
     path: '',
     error: ''
   }));
+  const [showOnboarding, setShowOnboarding] = useState(() => !loadData().settings.onboardingCompleted);
   const [updateState, setUpdateState] = useState(null);
   const updateWasRequestedRef = useRef(false);
 
@@ -382,7 +404,13 @@ function App() {
 
         if (result?.ok) {
           if (result.data) {
-            setData(normalizeData(result.data));
+            const normalized = normalizeData(result.data);
+            setData(normalized);
+            setShowOnboarding(!normalized.settings.onboardingCompleted);
+          } else {
+            const emptyData = createEmptyData();
+            setData(emptyData);
+            setShowOnboarding(true);
           }
 
           setStorageMeta({
@@ -661,7 +689,7 @@ function App() {
     });
   };
 
-  const resetData = () => setData(seedData);
+  const resetData = () => setData({ ...seedData, settings: { ...seedData.settings, onboardingCompleted: true } });
 
   const clearData = () => {
     setData((current) => ({
@@ -672,6 +700,11 @@ function App() {
   };
 
   const importData = (payload) => setData(normalizeData(payload));
+
+  const completeOnboarding = (settings) => {
+    setData(createEmptyData({ ...settings, onboardingCompleted: true }));
+    setShowOnboarding(false);
+  };
 
   const Page = {
     overview: OverviewPage,
@@ -684,26 +717,32 @@ function App() {
   return (
     <div className={`app-shell ${themeClass}`}>
       <AmbientBackground />
-      <Sidebar activePage={activePage} setActivePage={setActivePage} metrics={metrics} />
-      <main className="content-shell">
-        <TopBar activePage={activePage} metrics={metrics} />
-        <Page
-          data={data}
-          metrics={metrics}
-          onSaveTransaction={saveTransaction}
-          onDeleteTransaction={deleteTransaction}
-          onToggleTransactionStatus={toggleTransactionStatus}
-          onSavePurchase={savePurchase}
-          onDeletePurchase={deletePurchase}
-          onMarkPurchaseBought={markPurchaseBought}
-          onReorderPurchases={reorderPlannedPurchases}
-          onUpdateSettings={updateSettings}
-          onResetData={resetData}
-          onClearData={clearData}
-          onImportData={importData}
-          storageMeta={storageMeta}
-        />
-      </main>
+      {showOnboarding ? (
+        <OnboardingPage onComplete={completeOnboarding} />
+      ) : (
+        <>
+          <Sidebar activePage={activePage} setActivePage={setActivePage} metrics={metrics} />
+          <main className="content-shell">
+            <TopBar activePage={activePage} metrics={metrics} />
+            <Page
+              data={data}
+              metrics={metrics}
+              onSaveTransaction={saveTransaction}
+              onDeleteTransaction={deleteTransaction}
+              onToggleTransactionStatus={toggleTransactionStatus}
+              onSavePurchase={savePurchase}
+              onDeletePurchase={deletePurchase}
+              onMarkPurchaseBought={markPurchaseBought}
+              onReorderPurchases={reorderPlannedPurchases}
+              onUpdateSettings={updateSettings}
+              onResetData={resetData}
+              onClearData={clearData}
+              onImportData={importData}
+              storageMeta={storageMeta}
+            />
+          </main>
+        </>
+      )}
       {updateState && ['available', 'downloading', 'downloaded', 'install-on-quit', 'error'].includes(updateState.state) && (
         <UpdateModal
           status={updateState}
@@ -748,6 +787,131 @@ function LogoMark() {
     <div className="logo-mark" aria-label="finch">
       <img src={LOGO_URL} alt="" />
     </div>
+  );
+}
+
+function OnboardingPage({ onComplete }) {
+  const [form, setForm] = useState({
+    userName: '',
+    salary: '',
+    salaryIsVariable: false,
+    monthlyBudget: '',
+    mainAccount: '',
+    planningGoal: 'Organizar meu dinheiro'
+  });
+
+  const canContinue = form.userName.trim().length >= 2;
+  const salary = form.salaryIsVariable ? 0 : Number(form.salary || 0);
+  const suggestedBudget = form.monthlyBudget ? Number(form.monthlyBudget) : Math.round(salary * 0.75);
+
+  const updateField = (field, value) => {
+    setForm((current) => ({ ...current, [field]: value }));
+  };
+
+  const finish = () => {
+    if (!canContinue) return;
+
+    onComplete({
+      userName: form.userName.trim(),
+      salary,
+      salaryIsVariable: form.salaryIsVariable,
+      monthlyBudget: Math.max(0, suggestedBudget || 0),
+      planningGoal: form.planningGoal,
+      accounts: form.mainAccount.trim() ? [form.mainAccount.trim(), ...seedData.settings.accounts] : seedData.settings.accounts
+    });
+  };
+
+  return (
+    <main className="onboarding-shell">
+      <section className="onboarding-card">
+        <div className="onboarding-brand">
+          <LogoMark />
+          <div>
+            <p className="brand-name">finch</p>
+            <span>Seu dinheiro, seu futuro.</span>
+          </div>
+        </div>
+
+        <div className="onboarding-copy">
+          <p className="eyebrow">Primeiros passos</p>
+          <h1>Vamos deixar o Finch com a sua cara.</h1>
+          <p>Algumas respostas rápidas ajudam o app a começar limpo, com orçamento e projeções mais próximas da sua realidade.</p>
+        </div>
+
+        <div className="onboarding-form">
+          <label>
+            <span>Como podemos chamar você?</span>
+            <input
+              value={form.userName}
+              onChange={(event) => updateField('userName', event.target.value)}
+              placeholder="Ex.: João"
+              autoFocus
+            />
+          </label>
+
+          <label>
+            <span>Quanto você ganha por mês?</span>
+            <input
+              type="number"
+              min="0"
+              value={form.salary}
+              disabled={form.salaryIsVariable}
+              onChange={(event) => updateField('salary', event.target.value)}
+              placeholder="Ex.: 3500"
+            />
+          </label>
+
+          <label className="check-row">
+            <input
+              type="checkbox"
+              checked={form.salaryIsVariable}
+              onChange={(event) => updateField('salaryIsVariable', event.target.checked)}
+            />
+            <span>Meu salário não é fixo, pular por enquanto</span>
+          </label>
+
+          <label>
+            <span>Qual orçamento mensal você quer acompanhar?</span>
+            <input
+              type="number"
+              min="0"
+              value={form.monthlyBudget}
+              onChange={(event) => updateField('monthlyBudget', event.target.value)}
+              placeholder={salary ? `Sugestão: ${Math.round(salary * 0.75)}` : 'Ex.: 2500'}
+            />
+          </label>
+
+          <label>
+            <span>Conta principal</span>
+            <input
+              value={form.mainAccount}
+              onChange={(event) => updateField('mainAccount', event.target.value)}
+              placeholder="Ex.: Nubank, Inter, Carteira"
+            />
+          </label>
+
+          <label>
+            <span>Seu foco agora</span>
+            <select value={form.planningGoal} onChange={(event) => updateField('planningGoal', event.target.value)}>
+              <option>Organizar meu dinheiro</option>
+              <option>Reduzir gastos</option>
+              <option>Planejar compras futuras</option>
+              <option>Criar reserva financeira</option>
+              <option>Acompanhar parcelas e compromissos</option>
+            </select>
+          </label>
+        </div>
+
+        <div className="onboarding-actions">
+          <button className="secondary-button" type="button" onClick={() => updateField('salaryIsVariable', true)}>
+            Pular renda fixa
+          </button>
+          <button className="primary-button" type="button" disabled={!canContinue} onClick={finish}>
+            Começar
+          </button>
+        </div>
+      </section>
+    </main>
   );
 }
 

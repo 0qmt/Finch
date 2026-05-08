@@ -93,6 +93,111 @@ img {
   background: var(--app-gradient);
 }
 
+.onboarding-shell {
+  position: relative;
+  z-index: 1;
+  grid-column: 1 / -1;
+  display: grid;
+  min-height: 100vh;
+  place-items: center;
+  padding: clamp(18px, 4vw, 54px);
+}
+
+.onboarding-card {
+  width: min(760px, 100%);
+  padding: clamp(24px, 4vw, 44px);
+  border: 1px solid var(--line);
+  border-radius: 30px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  backdrop-filter: var(--chrome-blur);
+  animation: pageIn 160ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+.onboarding-brand {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 34px;
+}
+
+.onboarding-copy {
+  max-width: 610px;
+  margin-bottom: 28px;
+}
+
+.onboarding-copy h1 {
+  margin: 8px 0 12px;
+  color: var(--text);
+  font-size: clamp(2.05rem, 4vw, 3.7rem);
+  line-height: 0.98;
+  letter-spacing: -0.025em;
+}
+
+.onboarding-copy p:last-child {
+  margin: 0;
+  color: var(--muted);
+  font-size: 1.02rem;
+  line-height: 1.6;
+}
+
+.onboarding-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.onboarding-form label {
+  display: grid;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.onboarding-form input,
+.onboarding-form select {
+  width: 100%;
+  min-height: 50px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 0 15px;
+  color: var(--text);
+  background: rgba(118, 118, 128, 0.09);
+  outline: none;
+}
+
+.onboarding-form input:focus,
+.onboarding-form select:focus {
+  border-color: rgba(0, 122, 255, 0.45);
+  box-shadow: 0 0 0 4px var(--accent-soft);
+}
+
+.onboarding-form input:disabled {
+  opacity: 0.54;
+}
+
+.check-row {
+  grid-column: 1 / -1;
+  display: flex !important;
+  align-items: center;
+  gap: 10px !important;
+  min-height: 42px;
+}
+
+.check-row input {
+  width: 18px;
+  min-height: 18px;
+  accent-color: var(--accent);
+}
+
+.onboarding-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 26px;
+}
+
 .theme-grafite {
   color-scheme: dark;
   --bg: #0b0b0f;
@@ -1887,7 +1992,8 @@ img {
   }
 
   .settings-form,
-  .form-grid {
+  .form-grid,
+  .onboarding-form {
     grid-template-columns: 1fr;
   }
 
@@ -1976,5 +2082,9 @@ img {
 
   .modal-backdrop {
     padding: 12px;
+  }
+
+  .onboarding-actions {
+    flex-direction: column-reverse;
   }
 }

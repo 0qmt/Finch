@@ -36,4 +36,7 @@ npm version patch
 npm run dist:win
 ```
 
-Depois, crie uma GitHub Release com a tag gerada e envie o arquivo `release/finch-Setup-<versao>.exe`.
+Depois, crie uma GitHub Release com a tag gerada e envie:
+
+- `release/finch-Setup-<versao>.exe`
+- `release/finch-win-unpacked-<versao>.zip`

@@ -11,7 +11,8 @@
     "build": "vite build",
     "preview": "vite preview --host 127.0.0.1",
     "desktop": "npm run build && electron .",
-    "dist:win": "npm run icons && npm run build && electron-builder --win --x64"
+    "package:win-unpacked": "node scripts/package-win-unpacked.mjs",
+    "dist:win": "npm run icons && npm run build && electron-builder --win --x64 && npm run package:win-unpacked"
   },
   "dependencies": {
     "@vitejs/plugin-react": "^5.0.4",

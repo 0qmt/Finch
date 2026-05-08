@@ -297,7 +297,7 @@ const onboardingGoalOptions = [
 const navItems = [
   { id: 'overview', label: 'Visão geral', icon: LayoutDashboard },
   { id: 'wallet', label: 'Carteira / Extrato', icon: WalletCards },
-  { id: 'future', label: 'Compras futuras', icon: GalleryHorizontalEnd },
+  { id: 'future', label: 'Futuro', icon: GalleryHorizontalEnd },
   { id: 'projection', label: 'Projeções', icon: CalendarClock },
   { id: 'settings', label: 'Configurações', icon: Settings }
 ];
@@ -1660,6 +1660,7 @@ function TransactionModal({ transaction, categories, accounts, onClose, onSave }
 }
 
 function FuturePurchasesPage({ data, onSavePurchase, onDeletePurchase, onMarkPurchaseBought, onReorderPurchases }) {
+  const [futureView, setFutureView] = useState('purchases');
   const [editing, setEditing] = useState(null);
   const [showForm, setShowForm] = useState(false);
   const [confirming, setConfirming] = useState(null);
@@ -1786,6 +1787,12 @@ function FuturePurchasesPage({ data, onSavePurchase, onDeletePurchase, onMarkPur
 
   return (
     <section className="future-layout">
+      <FutureSpotlightNav activeView={futureView} onChange={setFutureView} />
+
+      {futureView === 'goals' ? (
+        <GoalsView />
+      ) : (
+        <>
       <div className="toolbar-line">
         <div className="section-intro">
           <p className="eyebrow">Galeria de desejos</p>
@@ -1946,7 +1953,86 @@ function FuturePurchasesPage({ data, onSavePurchase, onDeletePurchase, onMarkPur
           onConfirm={() => setMissingSite(null)}
         />
       )}
+        </>
+      )}
     </section>
+  );
+}
+
+function FutureSpotlightNav({ activeView, onChange }) {
+  const options = [
+    { id: 'purchases', label: 'Compras planejadas', eyebrow: 'produtos e desejos' },
+    { id: 'goals', label: 'Metas', eyebrow: 'planos maiores' }
+  ];
+
+  return (
+    <div className={`future-spotlight ${activeView}`} aria-label="Seções do futuro">
+      {options.map((option) => {
+        const active = activeView === option.id;
+        return (
+          <button
+            key={option.id}
+            className={active ? 'spotlight-item active' : 'spotlight-item'}
+            type="button"
+            onClick={() => onChange(option.id)}
+          >
+            <span>{option.eyebrow}</span>
+            <strong>{option.label}</strong>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function GoalsView() {
+  const sampleGoals = [
+    { title: 'Viagem', target: 5200, saved: 1350, deadline: 'Dezembro' },
+    { title: 'Reserva financeira', target: 9000, saved: 2400, deadline: '12 meses' },
+    { title: 'Setup novo', target: 3800, saved: 620, deadline: 'Sem pressa' }
+  ];
+
+  return (
+    <div className="goals-view">
+      <div className="toolbar-line">
+        <div className="section-intro">
+          <p className="eyebrow">Metas financeiras</p>
+          <h2>Organize o que você quer construir.</h2>
+        </div>
+        <button className="primary-button" type="button">
+          <Plus size={18} />
+          Nova meta
+        </button>
+      </div>
+
+      <div className="goal-grid">
+        {sampleGoals.map((goal) => {
+          const progress = Math.min(100, Math.round((goal.saved / goal.target) * 100));
+          return (
+            <article className="goal-card" key={goal.title}>
+              <div>
+                <p className="eyebrow">{goal.deadline}</p>
+                <h3>{goal.title}</h3>
+              </div>
+              <strong>{currency.format(goal.saved)}</strong>
+              <span>de {currency.format(goal.target)}</span>
+              <div className="goal-progress">
+                <span style={{ width: `${progress}%` }} />
+              </div>
+              <small>{progress}% concluído</small>
+            </article>
+          );
+        })}
+      </div>
+
+      <section className="panel full-width">
+        <EmptyState
+          icon={Target}
+          title="Metas editáveis chegam aqui"
+          text="Este espaço já está separado das compras. O próximo passo é criar, editar, aportar e concluir metas reais."
+        />
+      </section>
+    </div>
   );
 }
 

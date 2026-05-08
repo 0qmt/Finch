@@ -1,7 +1,7 @@
 {
   "name": "finch",
   "private": true,
-  "version": "0.1.8",
+  "version": "0.1.9",
   "description": "Aplicativo desktop de controle financeiro pessoal.",
   "main": "electron/main.cjs",
   "type": "module",

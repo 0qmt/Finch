@@ -286,6 +286,14 @@ const onboardingCategoryOptions = [
   'Presentes'
 ];
 
+const onboardingGoalOptions = [
+  'Organizar meu dinheiro',
+  'Reduzir gastos',
+  'Planejar compras futuras',
+  'Criar reserva financeira',
+  'Acompanhar parcelas e compromissos'
+];
+
 const navItems = [
   { id: 'overview', label: 'Visão geral', icon: LayoutDashboard },
   { id: 'wallet', label: 'Carteira / Extrato', icon: WalletCards },
@@ -941,16 +949,22 @@ function OnboardingPage({ onComplete }) {
                   />
                 </label>
 
-                <label className="field-pop delay-1">
+                <div className="goal-picker field-pop delay-1">
                   <span>Seu foco agora</span>
-                  <select value={form.planningGoal} onChange={(event) => updateField('planningGoal', event.target.value)}>
-                    <option>Organizar meu dinheiro</option>
-                    <option>Reduzir gastos</option>
-                    <option>Planejar compras futuras</option>
-                    <option>Criar reserva financeira</option>
-                    <option>Acompanhar parcelas e compromissos</option>
-                  </select>
-                </label>
+                  <div>
+                    {onboardingGoalOptions.map((goal) => (
+                      <button
+                        key={goal}
+                        className={form.planningGoal === goal ? 'goal-option selected' : 'goal-option'}
+                        type="button"
+                        onClick={() => updateField('planningGoal', goal)}
+                      >
+                        {form.planningGoal === goal && <Check size={15} />}
+                        {goal}
+                      </button>
+                    ))}
+                  </div>
+                </div>
               </div>
             </div>
           )}
@@ -2161,9 +2175,13 @@ function PurchaseModal({ purchase, categories, onClose, onSave }) {
   );
 }
 
-function ProjectionPage({ data, metrics }) {
+function ProjectionPage({ data, metrics, onUpdateSettings }) {
   const [selectedMonth, setSelectedMonth] = useState(currentMonthKey);
+  const [budgetDraft, setBudgetDraft] = useState(String(data.settings.monthlyBudget || ''));
   const obligations = useMemo(() => buildProjectedObligations(data.transactions, selectedMonth), [data.transactions, selectedMonth]);
+  useEffect(() => {
+    setBudgetDraft(String(data.settings.monthlyBudget || ''));
+  }, [data.settings.monthlyBudget]);
   const totals = obligations.reduce(
     (acc, item) => {
       if (item.type === 'income') acc.income += item.amount;
@@ -2183,6 +2201,48 @@ function ProjectionPage({ data, metrics }) {
         </div>
         <MonthPicker value={selectedMonth} onChange={setSelectedMonth} />
       </div>
+
+      <section className="panel full-width budget-settings-panel">
+        <PanelHeader
+          eyebrow="Orçamento"
+          title="Acompanhar limite mensal"
+          action={data.settings.monthlyBudget ? currency.format(data.settings.monthlyBudget) : 'Opcional'}
+        />
+        <div className="budget-settings-row">
+          <div>
+            <p>Defina um valor se quiser comparar seus gastos mensais com um limite planejado.</p>
+            <span>{data.settings.monthlyBudget ? 'Esse valor também alimenta o cartão de uso mensal.' : 'Sem orçamento definido, o Finch só mostra entradas, saídas e projeções.'}</span>
+          </div>
+          <div className="budget-settings-actions">
+            <input
+              type="number"
+              min="0"
+              value={budgetDraft}
+              onChange={(event) => setBudgetDraft(event.target.value)}
+              placeholder="Ex.: 2500"
+            />
+            <button
+              className="primary-button"
+              type="button"
+              onClick={() => onUpdateSettings({ monthlyBudget: Math.max(0, Number(budgetDraft || 0)) })}
+            >
+              Salvar
+            </button>
+            {!!data.settings.monthlyBudget && (
+              <button
+                className="secondary-button"
+                type="button"
+                onClick={() => {
+                  setBudgetDraft('');
+                  onUpdateSettings({ monthlyBudget: 0 });
+                }}
+              >
+                Desativar
+              </button>
+            )}
+          </div>
+        </div>
+      </section>
 
       <div className="metric-row">
         <StatCard title="Entradas previstas" value={currency.format(totals.income)} detail="Recorrências e pendências" icon={ArrowUpRight} tone="mint" />
@@ -2318,7 +2378,7 @@ function SettingsPage({ data, onUpdateSettings, onResetData, onClearData, onImpo
   return (
     <section className="settings-layout">
       <section className="panel">
-        <PanelHeader eyebrow="Preferências" title="Essenciais" action={data.settings.theme} />
+        <PanelHeader eyebrow="Preferências" title="Aparência" action={data.settings.theme} />
         <div className="settings-form">
           <label className="field">
             <span>Tema</span>
@@ -2327,22 +2387,6 @@ function SettingsPage({ data, onUpdateSettings, onResetData, onClearData, onImpo
               <option>Grafite</option>
               <option>Contraste suave</option>
             </select>
-          </label>
-          <label className="field">
-            <span>Orçamento mensal</span>
-            <input
-              type="number"
-              value={data.settings.monthlyBudget}
-              onChange={(event) => onUpdateSettings({ monthlyBudget: Number(event.target.value) })}
-            />
-          </label>
-          <label className="field">
-            <span>Salário</span>
-            <input
-              type="number"
-              value={data.settings.salary}
-              onChange={(event) => onUpdateSettings({ salary: Number(event.target.value) })}
-            />
           </label>
         </div>
       </section>

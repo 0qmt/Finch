@@ -716,11 +716,26 @@ function App() {
 
   const resetData = () => setData({ ...seedData, settings: { ...seedData.settings, onboardingCompleted: true } });
 
-  const clearData = () => {
+  const clearData = (options = { transactions: true, purchases: true }) => {
     setData((current) => ({
       ...current,
-      transactions: [],
-      purchases: []
+      settings: {
+        ...current.settings,
+        ...(options.categories ? { categories: seedData.settings.categories } : {}),
+        ...(options.accounts ? { accounts: seedData.settings.accounts } : {}),
+        ...(options.salary ? { salary: 0, salaryIsVariable: false } : {}),
+        ...(options.budget ? { monthlyBudget: 0 } : {}),
+        ...(options.preferences
+          ? {
+              theme: seedData.settings.theme,
+              userName: '',
+              planningGoal: seedData.settings.planningGoal,
+              onboardingCompleted: true
+            }
+          : {})
+      },
+      transactions: options.transactions ? [] : current.transactions,
+      purchases: options.purchases ? [] : current.purchases
     }));
   };
 
@@ -743,7 +758,11 @@ function App() {
     <div className={`app-shell ${themeClass}`}>
       <AmbientBackground />
       {showOnboarding ? (
-        <OnboardingPage onComplete={completeOnboarding} />
+        <OnboardingPage
+          theme={data.settings.theme}
+          onThemeChange={(theme) => updateSettings({ theme })}
+          onComplete={completeOnboarding}
+        />
       ) : (
         <>
           <Sidebar activePage={activePage} setActivePage={setActivePage} metrics={metrics} />
@@ -815,7 +834,7 @@ function LogoMark() {
   );
 }
 
-function OnboardingPage({ onComplete }) {
+function OnboardingPage({ theme, onThemeChange, onComplete }) {
   const steps = [
     { title: 'Boas-vindas', text: 'Seu nome e objetivo' },
     { title: 'Renda', text: 'Base do planejamento' },
@@ -870,6 +889,7 @@ function OnboardingPage({ onComplete }) {
 
     onComplete({
       userName: form.userName.trim(),
+      theme,
       salary,
       salaryIsVariable: form.salaryIsVariable,
       monthlyBudget: Math.max(0, suggestedBudget || 0),
@@ -905,6 +925,13 @@ function OnboardingPage({ onComplete }) {
             </div>
           </div>
 
+          <button
+            className="onboarding-theme-toggle"
+            type="button"
+            onClick={() => onThemeChange(theme === 'Grafite' ? 'iOS claro' : 'Grafite')}
+          >
+            {theme === 'Grafite' ? 'Usar tema claro' : 'Usar tema escuro'}
+          </button>
           <div className="step-track" aria-label="Etapas da introdução">
             {steps.map((item, index) => (
               <button
@@ -2320,9 +2347,19 @@ function MonthPicker({ value, onChange }) {
 }
 
 function SettingsPage({ data, onUpdateSettings, onResetData, onClearData, onImportData, storageMeta }) {
+  const initialClearOptions = {
+    transactions: true,
+    purchases: true,
+    categories: false,
+    accounts: false,
+    salary: false,
+    budget: false,
+    preferences: false
+  };
   const [categoryText, setCategoryText] = useState(data.settings.categories.join(', '));
   const [accountText, setAccountText] = useState(data.settings.accounts.join(', '));
   const [confirmAction, setConfirmAction] = useState(null);
+  const [clearOptions, setClearOptions] = useState(initialClearOptions);
   const [importError, setImportError] = useState('');
   const [backupMessage, setBackupMessage] = useState('');
   const fileRef = useRef(null);
@@ -2464,13 +2501,14 @@ function SettingsPage({ data, onUpdateSettings, onResetData, onClearData, onImpo
       </section>
 
       {confirmAction === 'clear' && (
-        <ConfirmModal
-          title="Limpar sistema?"
-          text="Transações e compras futuras serão removidas, mantendo suas categorias, contas e preferências."
-          confirmLabel="Limpar"
+        <ClearSystemModal
+          options={clearOptions}
+          onChange={setClearOptions}
           onCancel={() => setConfirmAction(null)}
           onConfirm={() => {
-            onClearData();
+            onClearData(clearOptions);
+            if (clearOptions.categories) setCategoryText(seedData.settings.categories.join(', '));
+            if (clearOptions.accounts) setAccountText(seedData.settings.accounts.join(', '));
             setConfirmAction(null);
           }}
         />
@@ -2522,6 +2560,77 @@ function Modal({ title, children, onClose }) {
           </button>
         </div>
         {children}
+      </div>
+    </div>
+  );
+}
+
+function ClearSystemModal({ options, onChange, onCancel, onConfirm }) {
+  const items = [
+    { key: 'transactions', title: 'Histórico do extrato', text: 'Remove entradas, saídas, parcelas e recorrências.' },
+    { key: 'purchases', title: 'Compras futuras e realizadas', text: 'Limpa a galeria, desejos e histórico de produtos comprados.' },
+    { key: 'categories', title: 'Categorias', text: 'Restaura a lista padrão de categorias.' },
+    { key: 'accounts', title: 'Contas', text: 'Restaura a lista padrão de contas.' },
+    { key: 'salary', title: 'Renda e salário', text: 'Remove a renda informada no onboarding.' },
+    { key: 'budget', title: 'Orçamento mensal', text: 'Desativa o limite mensal usado em projeções.' },
+    { key: 'preferences', title: 'Preferências do perfil', text: 'Limpa nome, foco inicial e volta ao tema claro.' }
+  ];
+  const allSelected = items.every((item) => options[item.key]);
+  const selectedCount = items.filter((item) => options[item.key]).length;
+
+  const setAll = (checked) => {
+    onChange(Object.fromEntries(items.map((item) => [item.key, checked])));
+  };
+
+  const toggle = (key) => {
+    onChange({ ...options, [key]: !options[key] });
+  };
+
+  return (
+    <div className="modal-backdrop" role="presentation">
+      <div className="modal-panel clear-panel" role="dialog" aria-modal="true" aria-label="Limpar sistema">
+        <div className="modal-header">
+          <div>
+            <p className="eyebrow">Limpeza seletiva</p>
+            <h2>O que você quer limpar?</h2>
+          </div>
+          <button className="icon-button ghost" type="button" title="Fechar" aria-label="Fechar" onClick={onCancel}>
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="clear-toolbar">
+          <span>{selectedCount} itens selecionados</span>
+          <button className="secondary-button" type="button" onClick={() => setAll(!allSelected)}>
+            {allSelected ? 'Desmarcar tudo' : 'Selecionar tudo'}
+          </button>
+        </div>
+
+        <div className="clear-options">
+          {items.map((item) => (
+            <button
+              key={item.key}
+              className={options[item.key] ? 'clear-option selected' : 'clear-option'}
+              type="button"
+              onClick={() => toggle(item.key)}
+            >
+              <span>{options[item.key] && <Check size={15} />}</span>
+              <div>
+                <strong>{item.title}</strong>
+                <p>{item.text}</p>
+              </div>
+            </button>
+          ))}
+        </div>
+
+        <div className="form-actions">
+          <button className="secondary-button" type="button" onClick={onCancel}>
+            Cancelar
+          </button>
+          <button className="danger-button" type="button" disabled={!selectedCount} onClick={onConfirm}>
+            Limpar selecionados
+          </button>
+        </div>
       </div>
     </div>
   );

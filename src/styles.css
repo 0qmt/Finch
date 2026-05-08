@@ -100,13 +100,13 @@ img {
   display: grid;
   min-height: 100vh;
   place-items: center;
-  padding: clamp(18px, 4vw, 54px);
+  padding: clamp(12px, 2.6vw, 36px);
 }
 
 .onboarding-card {
   width: min(960px, 100%);
-  min-height: min(680px, calc(100vh - 44px));
-  padding: clamp(18px, 3vw, 32px);
+  min-height: min(620px, calc(100vh - 28px));
+  padding: clamp(16px, 2.4vw, 28px);
   border: 1px solid var(--line);
   border-radius: 30px;
   background: var(--surface);
@@ -125,13 +125,32 @@ img {
 .onboarding-side {
   display: grid;
   align-content: start;
-  gap: 36px;
+  gap: 22px;
   min-width: 0;
   padding: 18px;
   border-radius: 24px;
   background:
     linear-gradient(180deg, rgba(0, 122, 255, 0.1), transparent 58%),
     rgba(118, 118, 128, 0.08);
+}
+
+.onboarding-theme-toggle {
+  min-height: 40px;
+  border: 1px solid var(--line);
+  border-radius: 15px;
+  color: var(--text);
+  background: rgba(118, 118, 128, 0.09);
+  font-weight: 800;
+  transition:
+    transform 140ms cubic-bezier(0.2, 0, 0, 1),
+    background 140ms ease,
+    border-color 140ms ease;
+}
+
+.onboarding-theme-toggle:hover {
+  transform: translateY(-1px);
+  border-color: var(--line-strong);
+  background: var(--accent-soft);
 }
 
 .onboarding-brand {
@@ -250,8 +269,8 @@ img {
   display: grid;
   align-content: center;
   gap: 26px;
-  min-height: 470px;
-  padding: clamp(18px, 4vw, 42px) 0 22px;
+  min-height: 430px;
+  padding: clamp(14px, 3vw, 30px) 0 16px;
   animation: stepEnter 420ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
@@ -262,7 +281,7 @@ img {
 .onboarding-copy h1 {
   margin: 8px 0 12px;
   color: var(--text);
-  font-size: clamp(2.1rem, 4.1vw, 4.35rem);
+  font-size: clamp(2rem, 3.7vw, 3.75rem);
   line-height: 0.96;
   letter-spacing: -0.025em;
   animation: titleSweep 480ms cubic-bezier(0.16, 1, 0.3, 1) both;
@@ -2139,6 +2158,86 @@ img {
   font-size: 0.94rem;
 }
 
+.clear-panel {
+  width: min(680px, 100%);
+}
+
+.clear-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 8px 0 16px;
+}
+
+.clear-toolbar span {
+  color: var(--muted);
+  font-size: 0.9rem;
+  font-weight: 800;
+}
+
+.clear-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.clear-option {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: 10px;
+  min-height: 86px;
+  padding: 13px;
+  border: 1px solid var(--line);
+  border-radius: 17px;
+  color: var(--muted);
+  text-align: left;
+  background: rgba(118, 118, 128, 0.07);
+  transition:
+    transform 140ms cubic-bezier(0.2, 0, 0, 1),
+    color 140ms ease,
+    background 140ms ease,
+    border-color 140ms ease;
+}
+
+.clear-option:hover {
+  transform: translateY(-1px);
+  border-color: var(--line-strong);
+}
+
+.clear-option > span {
+  display: grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: #fff;
+}
+
+.clear-option.selected {
+  color: var(--text);
+  border-color: rgba(255, 59, 48, 0.3);
+  background: rgba(255, 59, 48, 0.08);
+}
+
+.clear-option.selected > span {
+  border-color: transparent;
+  background: var(--danger);
+}
+
+.clear-option strong {
+  display: block;
+  color: var(--text);
+  font-size: 0.92rem;
+}
+
+.clear-option p {
+  margin: 5px 0 0;
+  font-size: 0.8rem;
+  line-height: 1.38;
+}
+
 .empty-state {
   display: grid;
   min-height: 220px;
@@ -2498,6 +2597,10 @@ img {
   }
 
   .custom-category-row {
+    grid-template-columns: 1fr;
+  }
+
+  .clear-options {
     grid-template-columns: 1fr;
   }
 

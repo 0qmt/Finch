@@ -7,8 +7,16 @@ contextBridge.exposeInMainWorld('finchStorage', {
 });
 
 contextBridge.exposeInMainWorld('finchUpdates', {
+  getStatus: () => ipcRenderer.invoke('finch:update:status'),
   checkForUpdates: () => ipcRenderer.invoke('finch:update:check'),
-  openDownload: (url) => ipcRenderer.invoke('finch:update:open-download', url)
+  downloadUpdate: () => ipcRenderer.invoke('finch:update:download'),
+  installNow: () => ipcRenderer.invoke('finch:update:install-now'),
+  installOnQuit: () => ipcRenderer.invoke('finch:update:install-on-quit'),
+  onUpdateEvent: (callback) => {
+    const listener = (_event, payload) => callback(payload);
+    ipcRenderer.on('finch:update:event', listener);
+    return () => ipcRenderer.removeListener('finch:update:event', listener);
+  }
 });
 
 window.addEventListener('DOMContentLoaded', () => {

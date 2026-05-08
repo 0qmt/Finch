@@ -36,6 +36,7 @@ import {
 import './styles.css';
 
 const STORAGE_KEY = 'finch:data:v1';
+const UPDATE_SNOOZE_KEY = 'finch:update-snoozed-until';
 const LOGO_URL = `${import.meta.env.BASE_URL}finch-logo.svg`;
 
 const today = new Date();
@@ -331,6 +332,18 @@ function getUpdateService() {
   return typeof window !== 'undefined' ? window.finchUpdates : null;
 }
 
+function getUpdateSnoozedUntil() {
+  return Number(localStorage.getItem(UPDATE_SNOOZE_KEY) || 0);
+}
+
+function isUpdateSnoozed() {
+  return Date.now() < getUpdateSnoozedUntil();
+}
+
+function snoozeUpdatesFor24h() {
+  localStorage.setItem(UPDATE_SNOOZE_KEY, String(Date.now() + 24 * 60 * 60 * 1000));
+}
+
 function loadData() {
   try {
     const stored = localStorage.getItem(STORAGE_KEY);
@@ -349,7 +362,8 @@ function App() {
     path: '',
     error: ''
   }));
-  const [updateNotice, setUpdateNotice] = useState(null);
+  const [updateState, setUpdateState] = useState(null);
+  const updateWasRequestedRef = useRef(false);
 
   useEffect(() => {
     const desktopStorage = getDesktopStorage();
@@ -447,18 +461,31 @@ function App() {
     if (!updateService?.checkForUpdates) return undefined;
 
     let active = true;
+    const handleUpdateEvent = (event) => {
+      if (!active || !event) return;
 
-    updateService
-      .checkForUpdates()
-      .then((result) => {
-        if (active && result?.ok && result.updateAvailable) {
-          setUpdateNotice(result);
-        }
-      })
-      .catch(() => {});
+      if (event.state === 'available' && isUpdateSnoozed()) return;
+      if (event.state === 'error' && !updateWasRequestedRef.current) return;
+
+      setUpdateState(event);
+    };
+
+    const unsubscribe = updateService.onUpdateEvent?.(handleUpdateEvent);
+
+    updateService.getStatus?.().then((status) => {
+      if (!active || !status?.state || status.state === 'idle') return;
+      if (status.state === 'available' && isUpdateSnoozed()) return;
+
+      setUpdateState(status);
+    });
+
+    if (!isUpdateSnoozed()) {
+      updateService.checkForUpdates().then(handleUpdateEvent).catch(() => {});
+    }
 
     return () => {
       active = false;
+      unsubscribe?.();
     };
   }, []);
 
@@ -677,25 +704,28 @@ function App() {
           storageMeta={storageMeta}
         />
       </main>
-      {updateNotice && (
-        <ConfirmModal
-          title="Nova versao disponivel"
-          text={`A versao ${updateNotice.latestVersion} do finch ja esta no GitHub. Voce esta usando a ${updateNotice.currentVersion}.`}
-          confirmLabel="Baixar agora"
-          icon={Download}
-          variant="primary"
-          onCancel={() => setUpdateNotice(null)}
-          onConfirm={() => {
+      {updateState && ['available', 'downloading', 'downloaded', 'install-on-quit', 'error'].includes(updateState.state) && (
+        <UpdateModal
+          status={updateState}
+          onSnooze={() => {
+            snoozeUpdatesFor24h();
+            setUpdateState(null);
+          }}
+          onDismiss={() => setUpdateState(null)}
+          onDownload={() => {
             const updateService = getUpdateService();
-            const url = updateNotice.downloadUrl || updateNotice.releaseUrl;
-
-            if (updateService?.openDownload) {
-              updateService.openDownload(url);
-            } else if (url) {
-              window.open(url, '_blank', 'noopener,noreferrer');
-            }
-
-            setUpdateNotice(null);
+            updateWasRequestedRef.current = true;
+            setUpdateState((current) => ({
+              ...current,
+              state: 'downloading',
+              progress: { percent: 0 }
+            }));
+            updateService?.downloadUpdate?.();
+          }}
+          onInstallNow={() => getUpdateService()?.installNow?.()}
+          onInstallOnQuit={() => {
+            getUpdateService()?.installOnQuit?.();
+            setUpdateState((current) => ({ ...current, state: 'install-on-quit' }));
           }}
         />
       )}
@@ -2110,6 +2140,109 @@ function Modal({ title, children, onClose }) {
           </button>
         </div>
         {children}
+      </div>
+    </div>
+  );
+}
+
+function UpdateModal({ status, onSnooze, onDismiss, onDownload, onInstallNow, onInstallOnQuit }) {
+  const version = status.updateInfo?.version || status.updateInfo?.releaseName || 'nova';
+  const progress = Math.round(status.progress?.percent || 0);
+
+  if (status.state === 'downloading') {
+    return (
+      <div className="modal-backdrop" role="presentation">
+        <div className="confirm-panel update-panel" role="dialog" aria-modal="true" aria-label="Baixando atualização">
+          <div className="confirm-icon primary">
+            <Download size={22} />
+          </div>
+          <h2>Baixando atualização</h2>
+          <p>A versão {version} está sendo baixada em segundo plano.</p>
+          <div className="update-progress" aria-label={`Download ${progress}%`}>
+            <span style={{ width: `${progress}%` }} />
+          </div>
+          <strong className="update-percent">{progress}%</strong>
+        </div>
+      </div>
+    );
+  }
+
+  if (status.state === 'downloaded') {
+    return (
+      <div className="modal-backdrop" role="presentation">
+        <div className="confirm-panel update-panel" role="dialog" aria-modal="true" aria-label="Atualização pronta">
+          <div className="confirm-icon primary">
+            <Check size={22} />
+          </div>
+          <h2>Atualização pronta</h2>
+          <p>O Finch já baixou a versão {version}. Você pode reiniciar agora ou deixar para aplicar quando fechar o app.</p>
+          <div className="form-actions">
+            <button className="secondary-button" type="button" onClick={onInstallOnQuit}>
+              Atualizar ao fechar
+            </button>
+            <button className="primary-button" type="button" onClick={onInstallNow}>
+              Reiniciar agora
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (status.state === 'install-on-quit') {
+    return (
+      <div className="modal-backdrop" role="presentation">
+        <div className="confirm-panel update-panel" role="dialog" aria-modal="true" aria-label="Atualização agendada">
+          <div className="confirm-icon primary">
+            <Clock3 size={22} />
+          </div>
+          <h2>Atualização agendada</h2>
+          <p>Você pode continuar usando o Finch. A nova versão será aplicada quando o app for fechado.</p>
+          <div className="form-actions">
+            <button className="primary-button" type="button" onClick={onDismiss}>
+              Entendi
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (status.state === 'error') {
+    return (
+      <div className="modal-backdrop" role="presentation">
+        <div className="confirm-panel update-panel" role="dialog" aria-modal="true" aria-label="Atualização indisponível">
+          <div className="confirm-icon danger">
+            <AlertCircle size={22} />
+          </div>
+          <h2>Não foi possível atualizar</h2>
+          <p>{status.error || 'Tente novamente mais tarde.'}</p>
+          <div className="form-actions">
+            <button className="primary-button" type="button" onClick={onDismiss}>
+              Fechar
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="modal-backdrop" role="presentation">
+      <div className="confirm-panel update-panel" role="dialog" aria-modal="true" aria-label="Nova atualização disponível">
+        <div className="confirm-icon primary">
+          <Sparkles size={22} />
+        </div>
+        <h2>Nova versão disponível</h2>
+        <p>A versão {version} do Finch está pronta para baixar. A atualização é opcional e você pode ser lembrado depois.</p>
+        <div className="form-actions">
+          <button className="secondary-button" type="button" onClick={onSnooze}>
+            Lembrar em 24h
+          </button>
+          <button className="primary-button" type="button" onClick={onDownload}>
+            Baixar atualização
+          </button>
+        </div>
       </div>
     </div>
   );

@@ -1,17 +1,20 @@
-const { app, BrowserWindow, Menu, dialog, ipcMain, shell } = require('electron');
+const { app, BrowserWindow, Menu, dialog, ipcMain, shell, screen } = require('electron');
+const { autoUpdater } = require('electron-updater');
 const fs = require('fs');
 const path = require('path');
 const packageJson = require('../package.json');
 
 const isDev = !app.isPackaged;
 const iconPath = path.join(__dirname, '..', 'build', 'icon.ico');
-const githubPublishConfig = Array.isArray(packageJson.build?.publish)
-  ? packageJson.build.publish.find((item) => item.provider === 'github')
-  : null;
-const updateRepository = {
-  owner: githubPublishConfig?.owner || '0qmt',
-  repo: githubPublishConfig?.repo || 'Finch'
+let mainWindow = null;
+let updateStatus = {
+  state: 'idle',
+  currentVersion: app.getVersion() || packageJson.version
 };
+
+autoUpdater.autoDownload = false;
+autoUpdater.autoInstallOnAppQuit = true;
+autoUpdater.allowPrerelease = false;
 
 function getDataFilePath() {
   return path.join(app.getPath('userData'), 'finch-data.json');
@@ -49,28 +52,34 @@ function formatDateForFileName() {
   return new Date().toISOString().slice(0, 10);
 }
 
-function normalizeVersion(version) {
-  return String(version || '0.0.0').replace(/^v/i, '').split('-')[0];
+function getAdaptiveZoomFactor() {
+  const { width, height } = screen.getPrimaryDisplay().workAreaSize;
+
+  if (width <= 1280 || height <= 720) return 0.86;
+  if (width <= 1366 || height <= 780) return 0.9;
+  if (width <= 1440 || height <= 850) return 0.94;
+
+  return 1;
 }
 
-function compareVersions(left, right) {
-  const leftParts = normalizeVersion(left).split('.').map((part) => Number(part) || 0);
-  const rightParts = normalizeVersion(right).split('.').map((part) => Number(part) || 0);
-  const length = Math.max(leftParts.length, rightParts.length);
+function sendUpdateEvent(payload) {
+  updateStatus = {
+    ...updateStatus,
+    ...payload,
+    currentVersion: app.getVersion() || packageJson.version
+  };
 
-  for (let index = 0; index < length; index += 1) {
-    const leftValue = leftParts[index] || 0;
-    const rightValue = rightParts[index] || 0;
-
-    if (leftValue > rightValue) return 1;
-    if (leftValue < rightValue) return -1;
-  }
-
-  return 0;
+  BrowserWindow.getAllWindows().forEach((window) => {
+    window.webContents.send('finch:update:event', updateStatus);
+  });
 }
 
-function getInstallerAsset(assets = []) {
-  return assets.find((asset) => /\.(exe|msi)$/i.test(asset.name)) || assets[0] || null;
+function formatUpdateInfo(info = {}) {
+  return {
+    version: info.version,
+    releaseName: info.releaseName || info.version,
+    releaseDate: info.releaseDate
+  };
 }
 
 ipcMain.handle('finch:data:load', () => {
@@ -130,87 +139,119 @@ ipcMain.handle('finch:data:export-backup', async (_event, data) => {
   }
 });
 
-ipcMain.handle('finch:update:check', async () => {
-  const currentVersion = app.getVersion() || packageJson.version;
+autoUpdater.on('checking-for-update', () => {
+  sendUpdateEvent({ state: 'checking', error: '' });
+});
 
-  if (!updateRepository.owner || !updateRepository.repo) {
+autoUpdater.on('update-available', (info) => {
+  sendUpdateEvent({
+    state: 'available',
+    updateInfo: formatUpdateInfo(info),
+    progress: null,
+    error: ''
+  });
+});
+
+autoUpdater.on('update-not-available', (info) => {
+  sendUpdateEvent({
+    state: 'not-available',
+    updateInfo: formatUpdateInfo(info),
+    progress: null,
+    error: ''
+  });
+});
+
+autoUpdater.on('download-progress', (progress) => {
+  sendUpdateEvent({
+    state: 'downloading',
+    progress: {
+      percent: Math.max(0, Math.min(100, progress.percent || 0)),
+      transferred: progress.transferred || 0,
+      total: progress.total || 0,
+      bytesPerSecond: progress.bytesPerSecond || 0
+    },
+    error: ''
+  });
+});
+
+autoUpdater.on('update-downloaded', (info) => {
+  sendUpdateEvent({
+    state: 'downloaded',
+    updateInfo: formatUpdateInfo(info),
+    progress: {
+      percent: 100,
+      transferred: 0,
+      total: 0,
+      bytesPerSecond: 0
+    },
+    error: ''
+  });
+});
+
+autoUpdater.on('error', (error) => {
+  sendUpdateEvent({
+    state: 'error',
+    error: error.message || 'Nao foi possivel atualizar agora.'
+  });
+});
+
+ipcMain.handle('finch:update:status', () => updateStatus);
+
+ipcMain.handle('finch:update:check', async () => {
+  if (isDev) {
     return {
       ok: true,
-      configured: false,
+      state: 'dev',
       updateAvailable: false,
-      currentVersion
+      currentVersion: packageJson.version,
+      message: 'Atualizacoes automaticas funcionam apenas no app instalado.'
     };
   }
 
   try {
-    const response = await fetch(`https://api.github.com/repos/${updateRepository.owner}/${updateRepository.repo}/releases/latest`, {
-      headers: {
-        Accept: 'application/vnd.github+json',
-        'User-Agent': `finch/${currentVersion}`
-      }
-    });
-
-    if (response.status === 404) {
-      return {
-        ok: true,
-        configured: true,
-        updateAvailable: false,
-        currentVersion,
-        message: 'Nenhuma release publicada ainda.'
-      };
-    }
-
-    if (!response.ok) {
-      return {
-        ok: false,
-        configured: true,
-        updateAvailable: false,
-        currentVersion,
-        error: `GitHub respondeu com ${response.status}.`
-      };
-    }
-
-    const release = await response.json();
-    const latestVersion = normalizeVersion(release.tag_name || release.name);
-    const installer = getInstallerAsset(release.assets);
-    const updateAvailable = compareVersions(latestVersion, currentVersion) > 0;
-
-    return {
-      ok: true,
-      configured: true,
-      updateAvailable,
-      currentVersion,
-      latestVersion,
-      releaseName: release.name || release.tag_name,
-      releaseUrl: release.html_url,
-      downloadUrl: installer?.browser_download_url || release.html_url
-    };
+    sendUpdateEvent({ state: 'checking', error: '' });
+    await autoUpdater.checkForUpdates();
+    return { ok: true, ...updateStatus };
   } catch (error) {
     return {
       ok: false,
-      configured: true,
-      updateAvailable: false,
-      currentVersion,
+      ...updateStatus,
       error: error.message
     };
   }
 });
 
-ipcMain.handle('finch:update:open-download', async (_event, url) => {
-  if (!url || !/^https:\/\/github\.com\//i.test(url)) {
-    return { ok: false, error: 'Link de atualizacao invalido.' };
+ipcMain.handle('finch:update:download', async () => {
+  if (isDev) {
+    return { ok: false, error: 'Atualizacoes automaticas funcionam apenas no app instalado.' };
   }
 
-  await shell.openExternal(url);
+  try {
+    sendUpdateEvent({ state: 'downloading', progress: { percent: 0 } });
+    await autoUpdater.downloadUpdate();
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
+});
+
+ipcMain.handle('finch:update:install-now', () => {
+  autoUpdater.quitAndInstall(false, true);
+  return { ok: true };
+});
+
+ipcMain.handle('finch:update:install-on-quit', () => {
+  autoUpdater.autoInstallOnAppQuit = true;
+  sendUpdateEvent({ state: 'install-on-quit' });
   return { ok: true };
 });
 
 function createMainWindow() {
-  const window = new BrowserWindow({
+  mainWindow = new BrowserWindow({
     width: 1280,
     height: 820,
-    minWidth: 1040,
-    minHeight: 680,
+    minWidth: 980,
+    minHeight: 620,
     title: 'finch',
     icon: iconPath,
     backgroundColor: '#f5f5f7',
@@ -226,19 +267,24 @@ function createMainWindow() {
 
   Menu.setApplicationMenu(null);
 
-  window.once('ready-to-show', () => {
-    window.show();
+  mainWindow.once('ready-to-show', () => {
+    mainWindow.webContents.setZoomFactor(getAdaptiveZoomFactor());
+    mainWindow.show();
   });
 
-  window.webContents.setWindowOpenHandler(({ url }) => {
+  mainWindow.on('resize', () => {
+    mainWindow.webContents.setZoomFactor(getAdaptiveZoomFactor());
+  });
+
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     shell.openExternal(url);
     return { action: 'deny' };
   });
 
   if (isDev && process.env.FINCH_DEV_SERVER_URL) {
-    window.loadURL(process.env.FINCH_DEV_SERVER_URL);
+    mainWindow.loadURL(process.env.FINCH_DEV_SERVER_URL);
   } else {
-    window.loadFile(path.join(__dirname, '..', 'dist', 'index.html'));
+    mainWindow.loadFile(path.join(__dirname, '..', 'dist', 'index.html'));
   }
 }
 

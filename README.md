@@ -39,4 +39,8 @@ npm run dist:win
 Depois, crie uma GitHub Release com a tag gerada e envie:
 
 - `release/finch-Setup-<versao>.exe`
+- `release/finch-Setup-<versao>.exe.blockmap`
+- `release/latest.yml`
 - `release/finch-win-unpacked-<versao>.zip`
+
+O instalador, o `.blockmap` e o `latest.yml` sao usados pelo auto-update. O ZIP e opcional para quem quer baixar a versao sem instalador.

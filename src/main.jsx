@@ -269,6 +269,23 @@ const createEmptyData = (settings = {}) => ({
   purchases: []
 });
 
+const onboardingCategoryOptions = [
+  'Moradia',
+  'Mercado',
+  'Transporte',
+  'Lazer',
+  'Saúde',
+  'Educação',
+  'Compras',
+  'Tecnologia',
+  'Viagem',
+  'Assinaturas',
+  'Restaurantes',
+  'Pets',
+  'Investimentos',
+  'Presentes'
+];
+
 const navItems = [
   { id: 'overview', label: 'Visão geral', icon: LayoutDashboard },
   { id: 'wallet', label: 'Carteira / Extrato', icon: WalletCards },
@@ -797,8 +814,10 @@ function OnboardingPage({ onComplete }) {
     salaryIsVariable: false,
     monthlyBudget: '',
     mainAccount: '',
-    planningGoal: 'Organizar meu dinheiro'
+    planningGoal: 'Organizar meu dinheiro',
+    categories: seedData.settings.categories
   });
+  const [customCategory, setCustomCategory] = useState('');
 
   const canContinue = form.userName.trim().length >= 2;
   const salary = form.salaryIsVariable ? 0 : Number(form.salary || 0);
@@ -806,6 +825,28 @@ function OnboardingPage({ onComplete }) {
 
   const updateField = (field, value) => {
     setForm((current) => ({ ...current, [field]: value }));
+  };
+
+  const toggleCategory = (category) => {
+    setForm((current) => {
+      const selected = current.categories.includes(category);
+      const categories = selected
+        ? current.categories.filter((item) => item !== category)
+        : [...current.categories, category];
+
+      return { ...current, categories };
+    });
+  };
+
+  const addCustomCategory = () => {
+    const category = customCategory.trim();
+    if (!category) return;
+
+    setForm((current) => ({
+      ...current,
+      categories: current.categories.includes(category) ? current.categories : [...current.categories, category]
+    }));
+    setCustomCategory('');
   };
 
   const finish = () => {
@@ -817,6 +858,7 @@ function OnboardingPage({ onComplete }) {
       salaryIsVariable: form.salaryIsVariable,
       monthlyBudget: Math.max(0, suggestedBudget || 0),
       planningGoal: form.planningGoal,
+      categories: form.categories.length ? form.categories : seedData.settings.categories,
       accounts: form.mainAccount.trim() ? [form.mainAccount.trim(), ...seedData.settings.accounts] : seedData.settings.accounts
     });
   };
@@ -900,6 +942,42 @@ function OnboardingPage({ onComplete }) {
               <option>Acompanhar parcelas e compromissos</option>
             </select>
           </label>
+
+          <div className="onboarding-categories">
+            <div>
+              <span>Categorias que combinam com sua rotina</span>
+              <p>Escolha as que você quer ver no app. Dá para editar tudo depois.</p>
+            </div>
+            <div className="category-picker">
+              {onboardingCategoryOptions.map((category) => (
+                <button
+                  key={category}
+                  className={form.categories.includes(category) ? 'category-chip selected' : 'category-chip'}
+                  type="button"
+                  onClick={() => toggleCategory(category)}
+                >
+                  {form.categories.includes(category) && <Check size={14} />}
+                  {category}
+                </button>
+              ))}
+            </div>
+            <div className="custom-category-row">
+              <input
+                value={customCategory}
+                onChange={(event) => setCustomCategory(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') {
+                    event.preventDefault();
+                    addCustomCategory();
+                  }
+                }}
+                placeholder="Adicionar categoria manualmente"
+              />
+              <button className="secondary-button" type="button" onClick={addCustomCategory}>
+                Adicionar
+              </button>
+            </div>
+          </div>
         </div>
 
         <div className="onboarding-actions">

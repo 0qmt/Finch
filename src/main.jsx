@@ -83,6 +83,8 @@ const compactCurrency = new Intl.NumberFormat('pt-BR', {
   maximumFractionDigits: 1
 });
 
+const compactMoney = (value) => compactCurrency.format(value).replace(/\s/g, '\u00a0');
+
 const monthLabel = (key) => {
   const [year, month] = key.split('-').map(Number);
   return new Date(year, month - 1, 1).toLocaleDateString('pt-BR', {
@@ -468,10 +470,35 @@ function App() {
   };
 
   const deleteTransaction = (id) => {
-    setData((current) => ({
-      ...current,
-      transactions: current.transactions.filter((transaction) => transaction.id !== id)
-    }));
+    setData((current) => {
+      const removedTransaction = current.transactions.find((transaction) => transaction.id === id);
+      const isPurchaseTransaction = (purchase) => {
+        if (!removedTransaction || purchase.status !== 'purchased') return false;
+        if (purchase.purchaseTransactionId === id) return true;
+
+        return (
+          !purchase.purchaseTransactionId &&
+          removedTransaction.notes?.includes('Compra registrada a partir da galeria de desejos') &&
+          purchase.name === removedTransaction.title &&
+          Number(purchase.targetPrice) === Number(removedTransaction.amount)
+        );
+      };
+
+      return {
+        ...current,
+        transactions: current.transactions.filter((transaction) => transaction.id !== id),
+        purchases: current.purchases.map((purchase) =>
+          isPurchaseTransaction(purchase)
+            ? {
+                ...purchase,
+                status: 'planned',
+                purchasedAt: undefined,
+                purchaseTransactionId: undefined
+              }
+            : purchase
+        )
+      };
+    });
   };
 
   const toggleTransactionStatus = (id) => {
@@ -541,20 +568,25 @@ function App() {
   };
 
   const markPurchaseBought = (purchase) => {
-    setData((current) => ({
-      ...current,
+    setData((current) => {
+      const transactionId = uid();
+
+      return {
+        ...current,
       purchases: current.purchases.map((item) =>
         item.id === purchase.id
           ? {
               ...item,
               status: 'purchased',
-              purchasedAt: isoToday
+              purchasedAt: isoToday,
+              purchaseTransactionId: transactionId
             }
           : item
       ),
-      transactions: [
+        transactions: [
         {
-          id: uid(),
+          id: transactionId,
+          sourcePurchaseId: purchase.id,
           title: purchase.name,
           amount: Number(purchase.targetPrice),
           type: 'expense',
@@ -566,9 +598,10 @@ function App() {
           installments: 1,
           notes: `Compra registrada a partir da galeria de desejos. Loja: ${purchase.store || 'não informada'}.`
         },
-        ...current.transactions
-      ]
-    }));
+          ...current.transactions
+        ]
+      };
+    });
   };
 
   const resetData = () => setData(seedData);
@@ -865,7 +898,7 @@ function ProjectionChart({ data }) {
         {data.map((item) => (
           <div key={item.key}>
             <span>{shortMonthLabel(item.key)}</span>
-            <strong>{compactCurrency.format(item.balance)}</strong>
+            <strong title={currency.format(item.balance)}>{compactMoney(item.balance)}</strong>
           </div>
         ))}
       </div>

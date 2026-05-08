@@ -622,9 +622,12 @@ img {
 
 .chart-legend {
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(86px, 1fr));
   gap: 10px;
   margin-top: 12px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+  scrollbar-width: thin;
 }
 
 .chart-legend div {
@@ -647,8 +650,10 @@ img {
   display: block;
   margin-top: 6px;
   color: var(--text);
-  font-size: 0.92rem;
-  overflow-wrap: anywhere;
+  font-size: clamp(0.74rem, 1.2vw, 0.92rem);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .budget-dial-layout {
@@ -1270,6 +1275,7 @@ img {
 
 .purchased-item strong {
   margin-left: auto;
+  white-space: nowrap;
 }
 
 .projection-layout {

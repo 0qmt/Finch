@@ -78,7 +78,8 @@ function formatUpdateInfo(info = {}) {
   return {
     version: info.version,
     releaseName: info.releaseName || info.version,
-    releaseDate: info.releaseDate
+    releaseDate: info.releaseDate,
+    releaseNotes: info.releaseNotes || ''
   };
 }
 

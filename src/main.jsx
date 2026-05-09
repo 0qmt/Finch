@@ -251,6 +251,44 @@ const seedData = {
       status: 'planned',
       createdAt: isoToday
     }
+  ],
+  goals: [
+    {
+      id: 'goal-trip',
+      title: 'Viagem',
+      targetAmount: 5200,
+      savedAmount: 1350,
+      priority: 'Alta',
+      horizon: 'MÃ©dio prazo',
+      deadline: 'Dezembro',
+      notes: 'Passagens, hospedagem e passeios.',
+      status: 'active',
+      createdAt: isoToday
+    },
+    {
+      id: 'goal-reserve',
+      title: 'Reserva financeira',
+      targetAmount: 9000,
+      savedAmount: 2400,
+      priority: 'MÃ©dia',
+      horizon: 'Longo prazo',
+      deadline: '12 meses',
+      notes: 'Criar tranquilidade para imprevistos.',
+      status: 'active',
+      createdAt: isoToday
+    },
+    {
+      id: 'goal-setup',
+      title: 'Setup novo',
+      targetAmount: 3800,
+      savedAmount: 620,
+      priority: 'Baixa',
+      horizon: 'Curto prazo',
+      deadline: 'Sem pressa',
+      notes: 'Mesa, cadeira e perifÃ©ricos.',
+      status: 'active',
+      createdAt: isoToday
+    }
   ]
 };
 
@@ -266,7 +304,8 @@ const createEmptyData = (settings = {}) => ({
     ...settings
   },
   transactions: [],
-  purchases: []
+  purchases: [],
+  goals: []
 });
 
 const onboardingCategoryOptions = [
@@ -327,6 +366,17 @@ const emptyPurchase = {
   status: 'planned'
 };
 
+const emptyGoal = {
+  title: '',
+  targetAmount: '',
+  savedAmount: '',
+  priority: 'MÃ©dia',
+  horizon: 'MÃ©dio prazo',
+  deadline: '',
+  notes: '',
+  status: 'active'
+};
+
 function normalizeData(data) {
   const settings = { ...seedData.settings, ...data?.settings };
   settings.theme = themeAliases[settings.theme] || (supportedThemes.includes(settings.theme) ? settings.theme : seedData.settings.theme);
@@ -366,7 +416,8 @@ function normalizeData(data) {
   return {
     settings,
     transactions,
-    purchases
+    purchases,
+    goals: Array.isArray(data?.goals) ? data.goals : []
   };
 }
 
@@ -677,6 +728,50 @@ function App() {
     });
   };
 
+  const saveGoal = (goal) => {
+    setData((current) => {
+      const payload = {
+        ...goal,
+        targetAmount: Number(goal.targetAmount),
+        savedAmount: Number(goal.savedAmount || 0),
+        createdAt: goal.createdAt || isoToday
+      };
+
+      if (payload.id) {
+        return {
+          ...current,
+          goals: current.goals.map((item) => (item.id === payload.id ? payload : item))
+        };
+      }
+
+      return {
+        ...current,
+        goals: [{ ...payload, id: uid() }, ...current.goals]
+      };
+    });
+  };
+
+  const deleteGoal = (id) => {
+    setData((current) => ({
+      ...current,
+      goals: current.goals.filter((goal) => goal.id !== id)
+    }));
+  };
+
+  const reorderGoals = (orderedIds) => {
+    setData((current) => {
+      const byId = new Map(current.goals.map((goal) => [goal.id, goal]));
+      const knownIds = new Set(orderedIds);
+      const ordered = orderedIds.map((id) => byId.get(id)).filter(Boolean);
+      const remaining = current.goals.filter((goal) => !knownIds.has(goal.id));
+
+      return {
+        ...current,
+        goals: [...ordered, ...remaining]
+      };
+    });
+  };
+
   const markPurchaseBought = (purchase) => {
     setData((current) => {
       const transactionId = uid();
@@ -716,7 +811,7 @@ function App() {
 
   const resetData = () => setData({ ...seedData, settings: { ...seedData.settings, onboardingCompleted: true } });
 
-  const clearData = (options = { transactions: true, purchases: true }) => {
+  const clearData = (options = { transactions: true, purchases: true, goals: true }) => {
     setData((current) => ({
       ...current,
       settings: {
@@ -735,7 +830,8 @@ function App() {
           : {})
       },
       transactions: options.transactions ? [] : current.transactions,
-      purchases: options.purchases ? [] : current.purchases
+      purchases: options.purchases ? [] : current.purchases,
+      goals: options.goals ? [] : current.goals
     }));
   };
 
@@ -778,6 +874,9 @@ function App() {
               onDeletePurchase={deletePurchase}
               onMarkPurchaseBought={markPurchaseBought}
               onReorderPurchases={reorderPlannedPurchases}
+              onSaveGoal={saveGoal}
+              onDeleteGoal={deleteGoal}
+              onReorderGoals={reorderGoals}
               onUpdateSettings={updateSettings}
               onResetData={resetData}
               onClearData={clearData}
@@ -1659,7 +1758,16 @@ function TransactionModal({ transaction, categories, accounts, onClose, onSave }
   );
 }
 
-function FuturePurchasesPage({ data, onSavePurchase, onDeletePurchase, onMarkPurchaseBought, onReorderPurchases }) {
+function FuturePurchasesPage({
+  data,
+  onSavePurchase,
+  onDeletePurchase,
+  onMarkPurchaseBought,
+  onReorderPurchases,
+  onSaveGoal,
+  onDeleteGoal,
+  onReorderGoals
+}) {
   const [futureView, setFutureView] = useState('purchases');
   const [editing, setEditing] = useState(null);
   const [showForm, setShowForm] = useState(false);
@@ -1668,19 +1776,12 @@ function FuturePurchasesPage({ data, onSavePurchase, onDeletePurchase, onMarkPur
   const [buying, setBuying] = useState(null);
   const [missingSite, setMissingSite] = useState(null);
   const [editMode, setEditMode] = useState(false);
-  const [dragState, setDragState] = useState({ draggedId: '', insertIndex: -1 });
-  const [draftOrderIds, setDraftOrderIds] = useState([]);
+  const [dragState, setDragState] = useState({ draggedId: '', overId: '' });
 
   const planned = data.purchases.filter((purchase) => purchase.status !== 'purchased');
   const purchased = data.purchases.filter((purchase) => purchase.status === 'purchased');
   const plannedById = useMemo(() => new Map(planned.map((purchase) => [purchase.id, purchase])), [planned]);
   const plannedIds = useMemo(() => planned.map((purchase) => purchase.id), [planned]);
-  const orderedIds = dragState.draggedId && draftOrderIds.length ? draftOrderIds : plannedIds;
-  const visibleIds = dragState.draggedId ? orderedIds.filter((id) => id !== dragState.draggedId) : orderedIds;
-  const safeInsertIndex =
-    dragState.draggedId && dragState.insertIndex >= 0
-      ? Math.min(dragState.insertIndex, visibleIds.length)
-      : -1;
 
   const openForm = (purchase = null) => {
     setEditing(purchase);
@@ -1700,35 +1801,18 @@ function FuturePurchasesPage({ data, onSavePurchase, onDeletePurchase, onMarkPur
       return;
     }
 
-    const startIndex = ids.indexOf(purchase.id);
-
     event.dataTransfer.effectAllowed = 'move';
     event.dataTransfer.setData('text/plain', purchase.id);
-    setDraftOrderIds(ids);
-    setDragState({ draggedId: purchase.id, insertIndex: Math.max(0, startIndex) });
+    setDragState({ draggedId: purchase.id, overId: '' });
   };
 
-  const moveDragOver = (event, purchaseId) => {
-    if (!editMode || !dragState.draggedId || dragState.draggedId === purchaseId) return;
+  const dragOverPurchase = (event, purchaseId) => {
+    if (!editMode || !dragState.draggedId) return;
     event.preventDefault();
     event.dataTransfer.dropEffect = 'move';
 
-    const idsWithoutDragged = orderedIds.filter((id) => id !== dragState.draggedId);
-    const targetIndex = idsWithoutDragged.indexOf(purchaseId);
-
-    if (targetIndex === -1) return;
-
-    const rect = event.currentTarget.getBoundingClientRect();
-    const xDistance = Math.abs(event.clientX - (rect.left + rect.width / 2));
-    const yDistance = Math.abs(event.clientY - (rect.top + rect.height / 2));
-    const after =
-      yDistance > xDistance
-        ? event.clientY > rect.top + rect.height / 2
-        : event.clientX > rect.left + rect.width / 2;
-    const nextInsertIndex = targetIndex + (after ? 1 : 0);
-
     setDragState((current) =>
-      current.insertIndex === nextInsertIndex ? current : { ...current, insertIndex: nextInsertIndex }
+      current.overId === purchaseId ? current : { ...current, overId: purchaseId }
     );
   };
 
@@ -1738,36 +1822,36 @@ function FuturePurchasesPage({ data, onSavePurchase, onDeletePurchase, onMarkPur
     event.dataTransfer.dropEffect = 'move';
 
     if (event.target === event.currentTarget) {
-      setDragState((current) =>
-        current.insertIndex === visibleIds.length ? current : { ...current, insertIndex: visibleIds.length }
-      );
+      setDragState((current) => (current.overId ? { ...current, overId: '' } : current));
     }
   };
 
-  const finishDrop = (event) => {
+  const finishDrop = (event, dropTargetId = '') => {
     event.preventDefault();
+    event.stopPropagation();
 
     if (!editMode || !dragState.draggedId) {
-      setDragState({ draggedId: '', insertIndex: -1 });
-      setDraftOrderIds([]);
+      setDragState({ draggedId: '', overId: '' });
       return;
     }
 
-    const nextIds = insertDraggedId(orderedIds, dragState.draggedId, safeInsertIndex);
-    onReorderPurchases(nextIds);
-    setDragState({ draggedId: '', insertIndex: -1 });
-    setDraftOrderIds([]);
+    const draggedId = event.dataTransfer.getData('text/plain') || dragState.draggedId;
+    const targetId = dropTargetId || dragState.overId;
+
+    if (targetId && draggedId !== targetId) {
+      onReorderPurchases(swapIds(plannedIds, draggedId, targetId));
+    }
+
+    setDragState({ draggedId: '', overId: '' });
   };
 
   const endDrag = () => {
-    setDragState({ draggedId: '', insertIndex: -1 });
-    setDraftOrderIds([]);
+    setDragState({ draggedId: '', overId: '' });
   };
 
   const toggleEditMode = () => {
     setEditMode((current) => !current);
-    setDragState({ draggedId: '', insertIndex: -1 });
-    setDraftOrderIds([]);
+    setDragState({ draggedId: '', overId: '' });
   };
 
   const movePurchaseByStep = (purchaseId, step) => {
@@ -1790,7 +1874,12 @@ function FuturePurchasesPage({ data, onSavePurchase, onDeletePurchase, onMarkPur
       <FutureSpotlightNav activeView={futureView} onChange={setFutureView} />
 
       {futureView === 'goals' ? (
-        <GoalsView />
+        <GoalsView
+          goals={data.goals}
+          onSaveGoal={onSaveGoal}
+          onDeleteGoal={onDeleteGoal}
+          onReorderGoals={onReorderGoals}
+        />
       ) : (
         <>
       <div className="toolbar-line">
@@ -1815,23 +1904,13 @@ function FuturePurchasesPage({ data, onSavePurchase, onDeletePurchase, onMarkPur
         onDragOver={moveDragOverGrid}
         onDrop={finishDrop}
       >
-        {visibleIds.map((purchaseId, index) => {
+        {plannedIds.map((purchaseId) => {
           const purchase = plannedById.get(purchaseId);
           if (!purchase) return null;
 
           return (
-            <React.Fragment key={purchase.id}>
-              {safeInsertIndex === index && (
-                <div
-                  className="purchase-drop-placeholder"
-                  onDragOver={(event) => {
-                    event.preventDefault();
-                    event.dataTransfer.dropEffect = 'move';
-                  }}
-                  onDrop={finishDrop}
-                />
-              )}
             <PurchaseCard
+              key={purchase.id}
               purchase={purchase}
               editMode={editMode}
               orderIndex={plannedIds.indexOf(purchase.id)}
@@ -1843,26 +1922,15 @@ function FuturePurchasesPage({ data, onSavePurchase, onDeletePurchase, onMarkPur
               onRequestOpenLink={(payload) => setLinkToOpen(payload)}
               onMissingSite={(item) => setMissingSite(item)}
               onDragStart={(event) => beginDrag(event, purchase)}
-              onDragOver={(event) => moveDragOver(event, purchase.id)}
-              onDrop={finishDrop}
+              onDragEnter={(event) => dragOverPurchase(event, purchase.id)}
+              onDragOver={(event) => dragOverPurchase(event, purchase.id)}
+              onDrop={(event) => finishDrop(event, purchase.id)}
               onDragEnd={endDrag}
+              isDragging={dragState.draggedId === purchase.id}
+              isDropTarget={dragState.draggedId && dragState.draggedId !== purchase.id && dragState.overId === purchase.id}
             />
-          </React.Fragment>
           );
         })}
-        {safeInsertIndex === visibleIds.length && (
-          <div
-            className="purchase-drop-placeholder end"
-            onDragOver={(event) => {
-              event.preventDefault();
-              event.dataTransfer.dropEffect = 'move';
-              setDragState((current) =>
-                current.insertIndex === visibleIds.length ? current : { ...current, insertIndex: visibleIds.length }
-              );
-            }}
-            onDrop={finishDrop}
-          />
-        )}
       </div>
 
       {!planned.length && (
@@ -1985,12 +2053,84 @@ function FutureSpotlightNav({ activeView, onChange }) {
   );
 }
 
-function GoalsView() {
-  const sampleGoals = [
-    { title: 'Viagem', target: 5200, saved: 1350, deadline: 'Dezembro' },
-    { title: 'Reserva financeira', target: 9000, saved: 2400, deadline: '12 meses' },
-    { title: 'Setup novo', target: 3800, saved: 620, deadline: 'Sem pressa' }
-  ];
+function GoalsView({ goals, onSaveGoal, onDeleteGoal, onReorderGoals }) {
+  const [editing, setEditing] = useState(null);
+  const [showForm, setShowForm] = useState(false);
+  const [confirming, setConfirming] = useState(null);
+  const [editMode, setEditMode] = useState(false);
+  const [dragState, setDragState] = useState({ draggedId: '', overId: '' });
+  const goalIds = goals.map((goal) => goal.id);
+  const goalById = useMemo(() => new Map(goals.map((goal) => [goal.id, goal])), [goals]);
+
+  const openForm = (goal = null) => {
+    setEditing(goal);
+    setShowForm(true);
+  };
+
+  const closeForm = () => {
+    setEditing(null);
+    setShowForm(false);
+  };
+
+  const beginDrag = (event, goal) => {
+    if (!editMode || goals.length < 2) {
+      event.preventDefault();
+      return;
+    }
+
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', goal.id);
+    setDragState({ draggedId: goal.id, overId: '' });
+  };
+
+  const dragOverGoal = (event, goalId) => {
+    if (!editMode || !dragState.draggedId) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+
+    setDragState((current) =>
+      current.overId === goalId ? current : { ...current, overId: goalId }
+    );
+  };
+
+  const finishDrop = (event, goalId = '') => {
+    event.preventDefault();
+    event.stopPropagation();
+
+    if (!editMode || !dragState.draggedId) {
+      setDragState({ draggedId: '', overId: '' });
+      return;
+    }
+
+    const draggedId = event.dataTransfer.getData('text/plain') || dragState.draggedId;
+    const targetId = goalId || dragState.overId;
+
+    if (targetId && draggedId !== targetId) {
+      onReorderGoals(swapIds(goalIds, draggedId, targetId));
+    }
+
+    setDragState({ draggedId: '', overId: '' });
+  };
+
+  const finishDrag = () => {
+    setDragState({ draggedId: '', overId: '' });
+  };
+
+  const toggleEditMode = () => {
+    setEditMode((current) => !current);
+    finishDrag();
+  };
+
+  const moveGoalByStep = (goalId, step) => {
+    const currentIndex = goalIds.indexOf(goalId);
+    const nextIndex = currentIndex + step;
+    if (currentIndex === -1 || nextIndex < 0 || nextIndex >= goalIds.length) return;
+
+    const nextIds = [...goalIds];
+    const [item] = nextIds.splice(currentIndex, 1);
+    nextIds.splice(nextIndex, 0, item);
+    onReorderGoals(nextIds);
+  };
 
   return (
     <div className="goals-view">
@@ -1999,43 +2139,224 @@ function GoalsView() {
           <p className="eyebrow">Metas financeiras</p>
           <h2>Organize o que você quer construir.</h2>
         </div>
-        <button className="primary-button" type="button">
-          <Plus size={18} />
-          Nova meta
-        </button>
+        <div className="future-actions">
+          <button className={editMode ? 'primary-button' : 'secondary-button'} type="button" onClick={toggleEditMode}>
+            {editMode ? <Check size={18} /> : <Edit3 size={18} />}
+            {editMode ? 'Concluir' : 'Editar'}
+          </button>
+          <button className="primary-button" type="button" onClick={() => openForm()}>
+            <Plus size={18} />
+            Nova meta
+          </button>
+        </div>
       </div>
 
-      <div className="goal-grid">
-        {sampleGoals.map((goal) => {
-          const progress = Math.min(100, Math.round((goal.saved / goal.target) * 100));
+      <div
+        className={dragState.draggedId ? 'goal-grid dragging-active' : 'goal-grid'}
+        onDragOver={(event) => {
+          if (!editMode || !dragState.draggedId) return;
+          event.preventDefault();
+          event.dataTransfer.dropEffect = 'move';
+        }}
+        onDrop={finishDrop}
+      >
+        {goalIds.map((goalId) => {
+          const goal = goalById.get(goalId);
+          if (!goal) return null;
+          const progress = Math.min(100, Math.round((Number(goal.savedAmount) / Math.max(1, Number(goal.targetAmount))) * 100));
           return (
-            <article className="goal-card" key={goal.title}>
-              <div>
-                <p className="eyebrow">{goal.deadline}</p>
-                <h3>{goal.title}</h3>
-              </div>
-              <strong>{currency.format(goal.saved)}</strong>
-              <span>de {currency.format(goal.target)}</span>
-              <div className="goal-progress">
-                <span style={{ width: `${progress}%` }} />
-              </div>
-              <small>{progress}% concluído</small>
-            </article>
+            <GoalCard
+                key={goal.id}
+                goal={goal}
+                progress={progress}
+                editMode={editMode}
+                orderIndex={goalIds.indexOf(goal.id)}
+                totalGoals={goalIds.length}
+                onEdit={openForm}
+                onDelete={() => setConfirming(goal)}
+                onMove={moveGoalByStep}
+                onDragStart={(event) => beginDrag(event, goal)}
+                onDragEnter={(event) => dragOverGoal(event, goal.id)}
+                onDragOver={(event) => dragOverGoal(event, goal.id)}
+                onDrop={(event) => finishDrop(event, goal.id)}
+                onDragEnd={finishDrag}
+                isDragging={dragState.draggedId === goal.id}
+                isDropTarget={dragState.draggedId && dragState.draggedId !== goal.id && dragState.overId === goal.id}
+              />
           );
         })}
       </div>
 
-      <section className="panel full-width">
-        <EmptyState
-          icon={Target}
-          title="Metas editáveis chegam aqui"
-          text="Este espaço já está separado das compras. O próximo passo é criar, editar, aportar e concluir metas reais."
+      {!goals.length && (
+        <section className="panel full-width">
+          <EmptyState icon={Target} title="Nenhuma meta ainda" text="Crie uma meta para juntar dinheiro, planejar uma viagem ou acompanhar uma conquista." />
+        </section>
+      )}
+
+      {showForm && (
+        <GoalModal
+          goal={editing}
+          onClose={closeForm}
+          onSave={(goal) => {
+            onSaveGoal(goal);
+            closeForm();
+          }}
         />
-      </section>
+      )}
+
+      {confirming && (
+        <ConfirmModal
+          title="Excluir meta?"
+          text={`"${confirming.title}" será removida do seu planejamento.`}
+          confirmLabel="Excluir"
+          onCancel={() => setConfirming(null)}
+          onConfirm={() => {
+            onDeleteGoal(confirming.id);
+            setConfirming(null);
+          }}
+        />
+      )}
+
     </div>
   );
 }
 
+function GoalCard({
+  goal,
+  progress,
+  editMode,
+  orderIndex,
+  totalGoals,
+  onEdit,
+  onDelete,
+  onMove,
+  onDragStart,
+  onDragEnter,
+  onDragOver,
+  onDrop,
+  onDragEnd,
+  isDragging,
+  isDropTarget
+}) {
+  const cardClassName = [
+    'goal-card',
+    `priority-${goal.priority.toLowerCase()}`,
+    `horizon-${goal.horizon.toLowerCase().replace(/\s+/g, '-')}`,
+    isDragging ? 'dragging' : '',
+    isDropTarget ? 'drop-target' : ''
+  ].filter(Boolean).join(' ');
+
+  return (
+    <article
+      className={cardClassName}
+      draggable={editMode}
+      onClick={() => editMode && onEdit(goal)}
+      onDragStart={onDragStart}
+      onDragEnter={onDragEnter}
+      onDragOver={onDragOver}
+      onDrop={onDrop}
+      onDragEnd={onDragEnd}
+    >
+      <div className="goal-card-top">
+        <span className={`priority-chip ${goal.priority.toLowerCase()}`}>{goal.priority}</span>
+        <span className="goal-horizon">{goal.horizon}</span>
+      </div>
+      <div>
+        <p className="eyebrow">{goal.deadline || 'Sem prazo'}</p>
+        <h3>{goal.title}</h3>
+      </div>
+      <strong>{currency.format(Number(goal.savedAmount || 0))}</strong>
+      <span>de {currency.format(Number(goal.targetAmount || 0))}</span>
+      <div className="goal-progress">
+        <span style={{ width: `${progress}%` }} />
+      </div>
+      <small>{progress}% concluído</small>
+      {goal.notes && <p>{goal.notes}</p>}
+      {editMode && (
+        <div className="row-actions">
+          <button className="icon-button ghost order-button" type="button" disabled={orderIndex <= 0} onClick={(event) => { event.stopPropagation(); onMove(goal.id, -1); }}>
+            <ArrowLeft size={17} />
+          </button>
+          <button className="icon-button ghost order-button" type="button" disabled={orderIndex >= totalGoals - 1} onClick={(event) => { event.stopPropagation(); onMove(goal.id, 1); }}>
+            <ArrowRight size={17} />
+          </button>
+          <button className="icon-button danger" type="button" onClick={(event) => { event.stopPropagation(); onDelete(); }}>
+            <Trash2 size={17} />
+          </button>
+        </div>
+      )}
+    </article>
+  );
+}
+
+function GoalModal({ goal, onClose, onSave }) {
+  const [form, setForm] = useState(goal || emptyGoal);
+  const [showTypeHelp, setShowTypeHelp] = useState(false);
+  const setField = (field, value) => setForm((current) => ({ ...current, [field]: value }));
+
+  const handleSubmit = (event) => {
+    event.preventDefault();
+    onSave(form);
+  };
+
+  return (
+    <Modal title={goal ? 'Editar meta' : 'Nova meta'} onClose={onClose}>
+      <form className="form-grid" onSubmit={handleSubmit}>
+        <label className="field wide-field">
+          <span>Nome da meta</span>
+          <input required value={form.title} onChange={(event) => setField('title', event.target.value)} placeholder="Ex.: Viagem para o fim do ano" />
+        </label>
+        <label className="field">
+          <span>Valor alvo</span>
+          <input required min="0" step="0.01" type="number" value={form.targetAmount} onChange={(event) => setField('targetAmount', event.target.value)} />
+        </label>
+        <label className="field">
+          <span>Valor guardado</span>
+          <input min="0" step="0.01" type="number" value={form.savedAmount} onChange={(event) => setField('savedAmount', event.target.value)} />
+        </label>
+        <label className="field">
+          <span>Prioridade</span>
+          <select value={form.priority} onChange={(event) => setField('priority', event.target.value)}>
+            <option>Alta</option>
+            <option>Média</option>
+            <option>Baixa</option>
+          </select>
+        </label>
+        <div className="field-label-row wide-field goal-type-helper-trigger">
+          <span>Tipo de prazo</span>
+          <button className="inline-link-button" type="button" onClick={() => setShowTypeHelp((current) => !current)}>
+            Como escolher?
+          </button>
+        </div>
+        <label className="field goal-type-select">
+          <span>Tipo de prazo</span>
+          <select value={form.horizon} onChange={(event) => setField('horizon', event.target.value)}>
+            <option>Curto prazo</option>
+            <option>Médio prazo</option>
+            <option>Longo prazo</option>
+          </select>
+        </label>
+        {showTypeHelp && (
+          <div className="goal-help-box">
+            <strong>Curto prazo</strong> combina com semanas ou poucos meses. <strong>Médio prazo</strong> costuma ir de alguns meses até um ano. <strong>Longo prazo</strong> é para planos maiores, como reserva financeira, mudança, carro ou viagem grande. Use prioridade alta para o que precisa de atenção agora, média para metas que caminham junto com outras e baixa para desejos sem pressa.
+          </div>
+        )}
+        <label className="field wide-field">
+          <span>Prazo ou lembrete</span>
+          <input value={form.deadline} onChange={(event) => setField('deadline', event.target.value)} placeholder="Ex.: Dezembro, 6 meses, sem pressa" />
+        </label>
+        <label className="field wide-field">
+          <span>Observações</span>
+          <textarea value={form.notes} onChange={(event) => setField('notes', event.target.value)} placeholder="Detalhes, itens envolvidos, motivo da meta..." />
+        </label>
+        <div className="form-actions">
+          <button className="secondary-button" type="button" onClick={onClose}>Cancelar</button>
+          <button className="primary-button" type="submit"><Check size={18} />Salvar</button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
 function PurchaseCard({
   purchase,
   editMode,
@@ -2048,11 +2369,21 @@ function PurchaseCard({
   onRequestOpenLink,
   onMissingSite,
   onDragStart,
+  onDragEnter,
   onDragOver,
   onDrop,
-  onDragEnd
+  onDragEnd,
+  isDragging,
+  isDropTarget
 }) {
   const normalizedLink = normalizeExternalLink(purchase.link);
+  const cardClassName = [
+    'purchase-card',
+    editMode ? 'editing' : normalizedLink ? 'clickable' : 'clickable missing-link',
+    isDragging ? 'dragging' : '',
+    isDropTarget ? 'drop-target' : ''
+  ].filter(Boolean).join(' ');
+
   const handleCardClick = () => {
     if (editMode) {
       onEdit(purchase);
@@ -2073,12 +2404,13 @@ function PurchaseCard({
 
   return (
     <article
-      className={editMode ? 'purchase-card editing' : normalizedLink ? 'purchase-card clickable' : 'purchase-card clickable missing-link'}
+      className={cardClassName}
       role={editMode ? 'button' : normalizedLink ? 'link' : 'button'}
       tabIndex={0}
       draggable={editMode}
       onClick={handleCardClick}
       onDragStart={onDragStart}
+      onDragEnter={onDragEnter}
       onDragOver={onDragOver}
       onDrop={onDrop}
       onDragEnd={onDragEnd}
@@ -2436,6 +2768,7 @@ function SettingsPage({ data, onUpdateSettings, onResetData, onClearData, onImpo
   const initialClearOptions = {
     transactions: true,
     purchases: true,
+    goals: true,
     categories: false,
     accounts: false,
     salary: false,
@@ -2655,6 +2988,7 @@ function ClearSystemModal({ options, onChange, onCancel, onConfirm }) {
   const items = [
     { key: 'transactions', title: 'Histórico do extrato', text: 'Remove entradas, saídas, parcelas e recorrências.' },
     { key: 'purchases', title: 'Compras futuras e realizadas', text: 'Limpa a galeria, desejos e histórico de produtos comprados.' },
+    { key: 'goals', title: 'Metas', text: 'Remove metas, valores guardados e progresso planejado.' },
     { key: 'categories', title: 'Categorias', text: 'Restaura a lista padrão de categorias.' },
     { key: 'accounts', title: 'Contas', text: 'Restaura a lista padrão de contas.' },
     { key: 'salary', title: 'Renda e salário', text: 'Remove a renda informada no onboarding.' },
@@ -2725,6 +3059,7 @@ function ClearSystemModal({ options, onChange, onCancel, onConfirm }) {
 function UpdateModal({ status, onSnooze, onDismiss, onDownload, onInstallNow, onInstallOnQuit }) {
   const version = status.updateInfo?.version || status.updateInfo?.releaseName || 'nova';
   const progress = Math.round(status.progress?.percent || 0);
+  const releaseNotes = formatReleaseNotes(status.updateInfo?.releaseNotes);
 
   if (status.state === 'downloading') {
     return (
@@ -2753,6 +3088,7 @@ function UpdateModal({ status, onSnooze, onDismiss, onDownload, onInstallNow, on
           </div>
           <h2>Atualização pronta</h2>
           <p>O Finch já baixou a versão {version}. Você pode reiniciar agora ou deixar para aplicar quando fechar o app.</p>
+          <ReleaseNotesSummary notes={releaseNotes} />
           <div className="form-actions">
             <button className="secondary-button" type="button" onClick={onInstallOnQuit}>
               Atualizar ao fechar
@@ -2812,6 +3148,7 @@ function UpdateModal({ status, onSnooze, onDismiss, onDownload, onInstallNow, on
         </div>
         <h2>Nova versão disponível</h2>
         <p>A versão {version} do Finch está pronta para baixar. A atualização é opcional e você pode ser lembrado depois.</p>
+        <ReleaseNotesSummary notes={releaseNotes} />
         <div className="form-actions">
           <button className="secondary-button" type="button" onClick={onSnooze}>
             Lembrar em 24h
@@ -2821,6 +3158,21 @@ function UpdateModal({ status, onSnooze, onDismiss, onDownload, onInstallNow, on
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+function ReleaseNotesSummary({ notes }) {
+  if (!notes.length) return null;
+
+  return (
+    <div className="update-notes">
+      <strong>O que mudou</strong>
+      <ul>
+        {notes.slice(0, 5).map((note) => (
+          <li key={note}>{note}</li>
+        ))}
+      </ul>
     </div>
   );
 }
@@ -2983,11 +3335,28 @@ function normalizeExternalLink(value) {
   return `https://${trimmed}`;
 }
 
-function insertDraggedId(ids, draggedId, insertIndex) {
-  const withoutDragged = ids.filter((id) => id !== draggedId);
-  const safeIndex = Math.max(0, Math.min(insertIndex, withoutDragged.length));
-  const next = [...withoutDragged];
-  next.splice(safeIndex, 0, draggedId);
+function formatReleaseNotes(releaseNotes) {
+  const rawNotes = Array.isArray(releaseNotes)
+    ? releaseNotes.map((note) => note?.note || note?.text || note).join('\n')
+    : String(releaseNotes || '');
+
+  return rawNotes
+    .replace(/<[^>]*>/g, ' ')
+    .split(/\r?\n/)
+    .map((line) => line.replace(/^[-*]\s+/, '').trim())
+    .filter(Boolean);
+}
+
+function swapIds(ids, draggedId, targetId) {
+  const draggedIndex = ids.indexOf(draggedId);
+  const targetIndex = ids.indexOf(targetId);
+
+  if (draggedIndex === -1 || targetIndex === -1 || draggedIndex === targetIndex) {
+    return ids;
+  }
+
+  const next = [...ids];
+  [next[draggedIndex], next[targetIndex]] = [next[targetIndex], next[draggedIndex]];
   return next;
 }
 

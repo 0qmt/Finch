@@ -3,4 +3,5 @@ dist/
 release/
 !build/
 .vite-dev*.log
+dev-server.log
 npm-debug.log*

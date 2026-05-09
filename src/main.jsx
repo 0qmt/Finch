@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+﻿import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import {
   ArrowDownRight,
@@ -33,11 +33,16 @@ import {
   WalletCards,
   X
 } from 'lucide-react';
+import packageJson from '../package.json';
 import './styles.css';
 
 const STORAGE_KEY = 'finch:data:v1';
 const UPDATE_SNOOZE_KEY = 'finch:update-snoozed-until';
 const LOGO_URL = `${import.meta.env.BASE_URL}finch-logo.svg`;
+const APP_VERSION = packageJson.version;
+const OFFICIAL_VERSION = '0.1.10';
+const IS_LOCAL_BUILD = import.meta.env.DEV;
+const APP_CHANNEL = IS_LOCAL_BUILD ? 'Alpha local' : 'Estável';
 
 const today = new Date();
 const isoToday = today.toISOString().slice(0, 10);
@@ -108,6 +113,8 @@ const seedData = {
     theme: 'iOS claro',
     userName: '',
     onboardingCompleted: false,
+    welcomeCompleted: false,
+    tutorialCompleted: false,
     salaryIsVariable: false,
     planningGoal: 'Organizar meu dinheiro',
     monthlyBudget: 5200,
@@ -259,7 +266,7 @@ const seedData = {
       targetAmount: 5200,
       savedAmount: 1350,
       priority: 'Alta',
-      horizon: 'MÃ©dio prazo',
+      horizon: 'Médio prazo',
       deadline: 'Dezembro',
       notes: 'Passagens, hospedagem e passeios.',
       status: 'active',
@@ -270,7 +277,7 @@ const seedData = {
       title: 'Reserva financeira',
       targetAmount: 9000,
       savedAmount: 2400,
-      priority: 'MÃ©dia',
+      priority: 'Média',
       horizon: 'Longo prazo',
       deadline: '12 meses',
       notes: 'Criar tranquilidade para imprevistos.',
@@ -285,7 +292,7 @@ const seedData = {
       priority: 'Baixa',
       horizon: 'Curto prazo',
       deadline: 'Sem pressa',
-      notes: 'Mesa, cadeira e perifÃ©ricos.',
+      notes: 'Mesa, cadeira e periféricos.',
       status: 'active',
       createdAt: isoToday
     }
@@ -341,6 +348,44 @@ const navItems = [
   { id: 'settings', label: 'Configurações', icon: Settings }
 ];
 
+const tutorialSteps = [
+  {
+    page: 'overview',
+    eyebrow: 'Guia 1 de 5',
+    title: 'Visão geral',
+    text: 'Aqui fica o painel rápido do seu momento financeiro: saldo, entradas, saídas, orçamento, categorias e transações recentes.',
+    bullets: ['Use os cards para entender o mês sem abrir relatórios.', 'O gráfico mostra a projeção dos próximos meses.', 'As pendências aparecem no topo para você revisar depois.']
+  },
+  {
+    page: 'wallet',
+    eyebrow: 'Guia 2 de 5',
+    title: 'Carteira / Extrato',
+    text: 'Este é o lugar para registrar e revisar movimentações reais.',
+    bullets: ['Novo lançamento cria uma entrada ou saída.', 'Busca e filtros ajudam a encontrar compras antigas.', 'Você pode confirmar, editar ou excluir uma transação quando precisar.']
+  },
+  {
+    page: 'future',
+    eyebrow: 'Guia 3 de 5',
+    title: 'Futuro',
+    text: 'Aqui entram compras planejadas e metas. É o espaço para organizar desejos antes de gastar.',
+    bullets: ['Novo produto salva uma compra futura com preço, loja, imagem e prioridade.', 'Nova meta cria objetivos como viagem, reserva ou algum item grande.', 'O botão Editar libera edição e reordenação arrastando os cards.']
+  },
+  {
+    page: 'projection',
+    eyebrow: 'Guia 4 de 5',
+    title: 'Projeções',
+    text: 'Nesta guia você escolhe mês e ano para ver compromissos previstos.',
+    bullets: ['Use mês e ano para navegar livremente no futuro.', 'Parcelas e recorrências aparecem como previsões.', 'O orçamento mensal ajuda a comparar o planejado com o limite desejado.']
+  },
+  {
+    page: 'settings',
+    eyebrow: 'Guia 5 de 5',
+    title: 'Configurações',
+    text: 'Aqui ficam os ajustes importantes e as opções de segurança dos dados.',
+    bullets: ['Tema muda a aparência do Finch.', 'Categorias e contas personalizam os formulários.', 'Backup, importação e limpeza ficam reunidos nesta tela.']
+  }
+];
+
 const emptyTransaction = {
   title: '',
   amount: '',
@@ -370,8 +415,8 @@ const emptyGoal = {
   title: '',
   targetAmount: '',
   savedAmount: '',
-  priority: 'MÃ©dia',
-  horizon: 'MÃ©dio prazo',
+  priority: 'Média',
+  horizon: 'Médio prazo',
   deadline: '',
   notes: '',
   status: 'active'
@@ -382,6 +427,10 @@ function normalizeData(data) {
   settings.theme = themeAliases[settings.theme] || (supportedThemes.includes(settings.theme) ? settings.theme : seedData.settings.theme);
   settings.onboardingCompleted =
     data?.settings?.onboardingCompleted ?? Boolean(data?.transactions?.length || data?.purchases?.length);
+  settings.welcomeCompleted =
+    data?.settings?.welcomeCompleted ?? Boolean(settings.onboardingCompleted);
+  settings.tutorialCompleted =
+    data?.settings?.tutorialCompleted ?? Boolean(settings.onboardingCompleted);
   const transactions = Array.isArray(data?.transactions) ? data.transactions : [];
   const transactionById = new Map(transactions.map((transaction) => [transaction.id, transaction]));
   const rawPurchases = Array.isArray(data?.purchases) ? data.purchases : [];
@@ -429,6 +478,10 @@ function getUpdateService() {
   return typeof window !== 'undefined' ? window.finchUpdates : null;
 }
 
+function isBrowserTestMode() {
+  return import.meta.env.DEV && !getDesktopStorage();
+}
+
 function getUpdateSnoozedUntil() {
   return Number(localStorage.getItem(UPDATE_SNOOZE_KEY) || 0);
 }
@@ -442,6 +495,11 @@ function snoozeUpdatesFor24h() {
 }
 
 function loadData() {
+  if (isBrowserTestMode()) {
+    localStorage.removeItem(STORAGE_KEY);
+    return createEmptyData();
+  }
+
   try {
     const stored = localStorage.getItem(STORAGE_KEY);
     return stored ? normalizeData(JSON.parse(stored)) : createEmptyData();
@@ -460,6 +518,9 @@ function App() {
     error: ''
   }));
   const [showOnboarding, setShowOnboarding] = useState(() => !loadData().settings.onboardingCompleted);
+  const [guidedOverlay, setGuidedOverlay] = useState(null);
+  const [tutorialActive, setTutorialActive] = useState(false);
+  const [tutorialStep, setTutorialStep] = useState(0);
   const [updateState, setUpdateState] = useState(null);
   const updateWasRequestedRef = useRef(false);
 
@@ -467,6 +528,19 @@ function App() {
     const desktopStorage = getDesktopStorage();
 
     if (!desktopStorage?.loadData) {
+      if (isBrowserTestMode()) {
+        localStorage.removeItem(STORAGE_KEY);
+        setData(createEmptyData());
+        setShowOnboarding(true);
+        setGuidedOverlay(null);
+        setTutorialActive(false);
+        setStorageMeta({
+          mode: 'browser-test',
+          path: '',
+          error: ''
+        });
+      }
+
       setStorageReady(true);
       return undefined;
     }
@@ -524,6 +598,7 @@ function App() {
 
   useEffect(() => {
     if (!storageReady) return;
+    if (isBrowserTestMode()) return;
 
     const desktopStorage = getDesktopStorage();
 
@@ -809,7 +884,8 @@ function App() {
     });
   };
 
-  const resetData = () => setData({ ...seedData, settings: { ...seedData.settings, onboardingCompleted: true } });
+  const resetData = () =>
+    setData({ ...seedData, settings: { ...seedData.settings, onboardingCompleted: true, welcomeCompleted: true, tutorialCompleted: true } });
 
   const clearData = (options = { transactions: true, purchases: true, goals: true }) => {
     setData((current) => ({
@@ -825,7 +901,8 @@ function App() {
               theme: seedData.settings.theme,
               userName: '',
               planningGoal: seedData.settings.planningGoal,
-              onboardingCompleted: true
+              onboardingCompleted: true,
+              welcomeCompleted: true
             }
           : {})
       },
@@ -838,8 +915,47 @@ function App() {
   const importData = (payload) => setData(normalizeData(payload));
 
   const completeOnboarding = (settings) => {
-    setData(createEmptyData({ ...settings, onboardingCompleted: true }));
+    setData(createEmptyData({ ...settings, onboardingCompleted: true, welcomeCompleted: false, tutorialCompleted: false }));
     setShowOnboarding(false);
+    setGuidedOverlay('welcome');
+  };
+
+  const closeWelcome = () => {
+    setGuidedOverlay(null);
+    updateSettings({ welcomeCompleted: true });
+  };
+
+  const startTutorial = () => {
+    setGuidedOverlay('tutorial');
+    updateSettings({ welcomeCompleted: true, tutorialCompleted: false });
+    setTutorialStep(0);
+    setActivePage(tutorialSteps[0].page);
+    setTutorialActive(true);
+  };
+
+  const showWelcome = () => {
+    setGuidedOverlay('welcome');
+    setTutorialActive(false);
+    updateSettings({ welcomeCompleted: false });
+  };
+
+  const finishTutorial = () => {
+    setGuidedOverlay(null);
+    setTutorialActive(false);
+    setTutorialStep(0);
+    updateSettings({ welcomeCompleted: true, tutorialCompleted: true });
+  };
+
+  const advanceTutorial = () => {
+    const nextStep = tutorialStep + 1;
+
+    if (nextStep >= tutorialSteps.length) {
+      finishTutorial();
+      return;
+    }
+
+    setTutorialStep(nextStep);
+    setActivePage(tutorialSteps[nextStep].page);
   };
 
   const Page = {
@@ -881,9 +997,27 @@ function App() {
               onResetData={resetData}
               onClearData={clearData}
               onImportData={importData}
+              onStartTutorial={startTutorial}
+              onShowWelcome={showWelcome}
               storageMeta={storageMeta}
             />
           </main>
+          {((guidedOverlay === 'welcome') || (!data.settings.welcomeCompleted && !tutorialActive)) && (
+            <WelcomeOverlay
+              userName={data.settings.userName}
+              onStartTutorial={startTutorial}
+              onSkip={closeWelcome}
+            />
+          )}
+          {(guidedOverlay === 'tutorial' || tutorialActive) && (
+            <TutorialOverlay
+              step={tutorialSteps[tutorialStep]}
+              stepIndex={tutorialStep}
+              totalSteps={tutorialSteps.length}
+              onNext={advanceTutorial}
+              onSkip={finishTutorial}
+            />
+          )}
         </>
       )}
       {updateState && ['available', 'downloading', 'downloaded', 'install-on-quit', 'error'].includes(updateState.state) && (
@@ -929,6 +1063,89 @@ function LogoMark() {
   return (
     <div className="logo-mark" aria-label="finch">
       <img src={LOGO_URL} alt="" />
+    </div>
+  );
+}
+
+function WelcomeOverlay({ userName, onStartTutorial, onSkip }) {
+  const displayName = userName?.trim() || 'bem-vindo';
+
+  return (
+    <div className="modal-backdrop welcome-backdrop" role="presentation">
+      <section className="welcome-panel" role="dialog" aria-modal="true" aria-label="Boas-vindas ao Finch">
+        <div className="welcome-hero">
+          <LogoMark />
+          <span className="eyebrow">Tudo pronto</span>
+        </div>
+        <h2>{displayName}, seu Finch está preparado.</h2>
+        <p>
+          Agora você pode registrar movimentações, planejar compras, criar metas e olhar para os próximos meses com mais clareza.
+        </p>
+        <div className="welcome-feature-grid">
+          <div>
+            <LayoutDashboard size={18} />
+            <strong>Resumo limpo</strong>
+            <span>Veja saldo, entradas, saídas e orçamento sem se perder.</span>
+          </div>
+          <div>
+            <GalleryHorizontalEnd size={18} />
+            <strong>Futuro organizado</strong>
+            <span>Separe desejos, produtos e metas antes de decidir gastar.</span>
+          </div>
+          <div>
+            <CalendarClock size={18} />
+            <strong>Projeções</strong>
+            <span>Escolha qualquer mês para entender compromissos futuros.</span>
+          </div>
+        </div>
+        <div className="form-actions">
+          <button className="secondary-button" type="button" onClick={onSkip}>
+            Explorar sozinho
+          </button>
+          <button className="primary-button" type="button" onClick={onStartTutorial}>
+            <Sparkles size={18} />
+            Fazer tutorial
+          </button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function TutorialOverlay({ step, stepIndex, totalSteps, onNext, onSkip }) {
+  const isLast = stepIndex === totalSteps - 1;
+
+  return (
+    <div className="tutorial-layer" role="presentation">
+      <section className="tutorial-panel" role="dialog" aria-modal="true" aria-label={`Tutorial: ${step.title}`}>
+        <div className="tutorial-header">
+          <span className="eyebrow">{step.eyebrow}</span>
+          <div className="tutorial-dots" aria-hidden="true">
+            {Array.from({ length: totalSteps }, (_, index) => (
+              <span className={index <= stepIndex ? 'active' : ''} key={index} />
+            ))}
+          </div>
+        </div>
+        <h2>{step.title}</h2>
+        <p>{step.text}</p>
+        <ul>
+          {step.bullets.map((bullet) => (
+            <li key={bullet}>
+              <Check size={15} />
+              <span>{bullet}</span>
+            </li>
+          ))}
+        </ul>
+        <div className="tutorial-actions">
+          <button className="secondary-button" type="button" onClick={onSkip}>
+            Pular tutorial
+          </button>
+          <button className="primary-button" type="button" onClick={onNext}>
+            {isLast ? 'Finalizar' : 'Entendi'}
+            {!isLast && <ArrowRight size={18} />}
+          </button>
+        </div>
+      </section>
     </div>
   );
 }
@@ -2764,7 +2981,7 @@ function MonthPicker({ value, onChange }) {
   );
 }
 
-function SettingsPage({ data, onUpdateSettings, onResetData, onClearData, onImportData, storageMeta }) {
+function SettingsPage({ data, onUpdateSettings, onResetData, onClearData, onImportData, onStartTutorial, onShowWelcome, storageMeta }) {
   const initialClearOptions = {
     transactions: true,
     purchases: true,
@@ -2848,6 +3065,49 @@ function SettingsPage({ data, onUpdateSettings, onResetData, onClearData, onImpo
       </section>
 
       <section className="panel">
+        <PanelHeader eyebrow="Ajuda" title="Tutorial guiado" action={data.settings.tutorialCompleted ? 'visto' : 'novo'} />
+        <div className="storage-status">
+          <Sparkles size={18} />
+          <div>
+            <strong>Conheça o Finch por partes</strong>
+            <span>Refaça o tour sempre que quiser revisar o papel de cada guia e dos botões principais.</span>
+          </div>
+        </div>
+        <div className="data-actions">
+          <button className="secondary-button" type="button" onClick={onStartTutorial}>
+            <ArrowRight size={18} />
+            Abrir tutorial
+          </button>
+          <button className="secondary-button" type="button" onClick={onShowWelcome}>
+            <Sparkles size={18} />
+            Ver boas-vindas
+          </button>
+        </div>
+      </section>
+
+      <section className="panel">
+        <PanelHeader eyebrow="Sistema" title="Versão do Finch" action={APP_CHANNEL} />
+        <div className="version-grid">
+          <div>
+            <span>Canal</span>
+            <strong>{APP_CHANNEL}</strong>
+          </div>
+          <div>
+            <span>Versão atual</span>
+            <strong>v{APP_VERSION}</strong>
+          </div>
+          <div>
+            <span>Última oficial</span>
+            <strong>v{OFFICIAL_VERSION}</strong>
+          </div>
+          <div>
+            <span>Estado</span>
+            <strong>{APP_VERSION === OFFICIAL_VERSION && !IS_LOCAL_BUILD ? 'Atualizado' : 'Teste local'}</strong>
+          </div>
+        </div>
+      </section>
+
+      <section className="panel">
         <PanelHeader eyebrow="Organização" title="Categorias e contas" action="listas" />
         <div className="settings-form">
           <label className="field wide-field">
@@ -2888,9 +3148,17 @@ function SettingsPage({ data, onUpdateSettings, onResetData, onClearData, onImpo
         <div className="storage-status">
           <ShieldCheck size={18} />
           <div>
-            <strong>{storageMeta?.mode === 'browser' ? 'Salvamento no navegador' : 'Salvamento local automático'}</strong>
+            <strong>
+              {storageMeta?.mode === 'browser-test'
+                ? 'Modo de teste sem salvamento'
+                : storageMeta?.mode === 'browser'
+                  ? 'Salvamento no navegador'
+                  : 'Salvamento local automático'}
+            </strong>
             <span>
-              {storageMeta?.error ||
+              {storageMeta?.mode === 'browser-test'
+                ? 'Ao recarregar no navegador, o Finch volta para a tela inicial para facilitar testes.'
+                : storageMeta?.error ||
                 storageMeta?.path ||
                 'As alterações são salvas automaticamente neste dispositivo.'}
             </span>
@@ -3361,3 +3629,4 @@ function swapIds(ids, draggedId, targetId) {
 }
 
 createRoot(document.getElementById('root')).render(<App />);
+

@@ -40,7 +40,7 @@ const STORAGE_KEY = 'finch:data:v1';
 const UPDATE_SNOOZE_KEY = 'finch:update-snoozed-until';
 const LOGO_URL = `${import.meta.env.BASE_URL}finch-logo.svg`;
 const APP_VERSION = packageJson.version;
-const OFFICIAL_VERSION = '0.1.10';
+const OFFICIAL_VERSION = '0.1.12';
 const IS_LOCAL_BUILD = import.meta.env.DEV;
 const APP_CHANNEL = IS_LOCAL_BUILD ? 'Alpha local' : 'Estável';
 
@@ -220,6 +220,7 @@ const seedData = {
       id: 'wish-monitor',
       name: 'Monitor ultrawide',
       targetPrice: 2190,
+      isPromotionalPrice: true,
       priority: 'Alta',
       category: 'Tecnologia',
       store: 'Kabum',
@@ -401,7 +402,9 @@ const emptyTransaction = {
 
 const emptyPurchase = {
   name: '',
+  priceMode: 'specified',
   targetPrice: '',
+  isPromotionalPrice: false,
   priority: 'Média',
   category: 'Tecnologia',
   store: '',
@@ -435,27 +438,36 @@ function normalizeData(data) {
   const transactionById = new Map(transactions.map((transaction) => [transaction.id, transaction]));
   const rawPurchases = Array.isArray(data?.purchases) ? data.purchases : [];
   const purchases = rawPurchases.map((purchase) => {
-    if (purchase.status !== 'purchased') return purchase;
+    const hasStoredPrice =
+      purchase.priceMode ? purchase.priceMode !== 'unspecified' : purchase.targetPrice !== undefined && purchase.targetPrice !== null && purchase.targetPrice !== '';
+    const normalizedPurchase = {
+      ...purchase,
+      priceMode: hasStoredPrice ? 'specified' : 'unspecified',
+      targetPrice: hasStoredPrice ? Number(purchase.targetPrice || 0) : 0,
+      isPromotionalPrice: hasStoredPrice && Boolean(purchase.isPromotionalPrice)
+    };
 
-    const linkedTransaction = purchase.purchaseTransactionId
-      ? transactionById.get(purchase.purchaseTransactionId)
+    if (normalizedPurchase.status !== 'purchased') return normalizedPurchase;
+
+    const linkedTransaction = normalizedPurchase.purchaseTransactionId
+      ? transactionById.get(normalizedPurchase.purchaseTransactionId)
       : transactions.find(
           (transaction) =>
-            transaction.sourcePurchaseId === purchase.id ||
+            transaction.sourcePurchaseId === normalizedPurchase.id ||
             (transaction.notes?.includes('Compra registrada a partir da galeria de desejos') &&
-              transaction.title === purchase.name &&
-              Number(transaction.amount) === Number(purchase.targetPrice))
+              transaction.title === normalizedPurchase.name &&
+              Number(transaction.amount) === Number(normalizedPurchase.targetPrice))
         );
 
     if (linkedTransaction) {
       return {
-        ...purchase,
+        ...normalizedPurchase,
         purchaseTransactionId: linkedTransaction.id
       };
     }
 
     return {
-      ...purchase,
+      ...normalizedPurchase,
       status: 'planned',
       purchasedAt: undefined,
       purchaseTransactionId: undefined
@@ -753,9 +765,12 @@ function App() {
 
   const savePurchase = (purchase) => {
     setData((current) => {
+      const hasPrice = hasSpecifiedPurchasePrice(purchase);
       const payload = {
         ...purchase,
-        targetPrice: Number(purchase.targetPrice),
+        priceMode: hasPrice ? 'specified' : 'unspecified',
+        targetPrice: hasPrice ? Number(purchase.targetPrice) : 0,
+        isPromotionalPrice: hasPrice && Boolean(purchase.isPromotionalPrice),
         image: purchase.image || '',
         link: purchase.link || '',
         createdAt: purchase.createdAt || isoToday
@@ -849,7 +864,24 @@ function App() {
 
   const markPurchaseBought = (purchase) => {
     setData((current) => {
-      const transactionId = uid();
+      const hasPrice = hasSpecifiedPurchasePrice(purchase);
+      const transactionId = hasPrice ? uid() : '';
+      const transaction = hasPrice
+        ? {
+            id: transactionId,
+            sourcePurchaseId: purchase.id,
+            title: purchase.name,
+            amount: getPurchasePrice(purchase),
+            type: 'expense',
+            category: purchase.category,
+            account: current.settings.accounts[0] || 'Carteira',
+            date: isoToday,
+            status: 'confirmed',
+            recurring: false,
+            installments: 1,
+            notes: `Compra registrada a partir da galeria de desejos. Loja: ${purchase.store || 'não informada'}.`
+          }
+        : null;
 
       return {
         ...current,
@@ -859,27 +891,11 @@ function App() {
               ...item,
               status: 'purchased',
               purchasedAt: isoToday,
-              purchaseTransactionId: transactionId
+              purchaseTransactionId: transactionId || undefined
             }
           : item
       ),
-        transactions: [
-        {
-          id: transactionId,
-          sourcePurchaseId: purchase.id,
-          title: purchase.name,
-          amount: Number(purchase.targetPrice),
-          type: 'expense',
-          category: purchase.category,
-          account: current.settings.accounts[0] || 'Carteira',
-          date: isoToday,
-          status: 'confirmed',
-          recurring: false,
-          installments: 1,
-          notes: `Compra registrada a partir da galeria de desejos. Loja: ${purchase.store || 'não informada'}.`
-        },
-          ...current.transactions
-        ]
+        transactions: transaction ? [transaction, ...current.transactions] : current.transactions
       };
     });
   };
@@ -2164,7 +2180,7 @@ function FuturePurchasesPage({
               <div className="purchased-item" key={purchase.id}>
                 <Check size={16} />
                 <span>{purchase.name}</span>
-                <strong>{currency.format(purchase.targetPrice)}</strong>
+                <strong>{getPurchasePriceLabel(purchase)}</strong>
               </div>
             ))}
           </div>
@@ -2199,7 +2215,11 @@ function FuturePurchasesPage({
       {buying && (
         <ConfirmModal
           title="Registrar produto como comprado?"
-          text={`"${buying.name}" será marcado como comprado e uma transação será adicionada ao extrato.`}
+          text={
+            hasSpecifiedPurchasePrice(buying)
+              ? `"${buying.name}" será marcado como comprado e uma transação será adicionada ao extrato.`
+              : `"${buying.name}" será marcado como comprado sem adicionar transação, porque o preço não foi especificado.`
+          }
           confirmLabel="Registrar compra"
           icon={Check}
           variant="primary"
@@ -2594,6 +2614,12 @@ function PurchaseCard({
   isDropTarget
 }) {
   const normalizedLink = normalizeExternalLink(purchase.link);
+  const hasPrice = hasSpecifiedPurchasePrice(purchase);
+  const priceHint = hasPrice
+    ? purchase.isPromotionalPrice
+      ? `Preço de promoção em ${purchase.store || 'loja a definir'}.`
+      : `Preço alvo em ${purchase.store || 'loja a definir'}.`
+    : `Preço ainda não especificado${purchase.store ? ` em ${purchase.store}` : ''}.`;
   const cardClassName = [
     'purchase-card',
     editMode ? 'editing' : normalizedLink ? 'clickable' : 'clickable missing-link',
@@ -2654,8 +2680,11 @@ function PurchaseCard({
           <span className="purchase-category">{purchase.category}</span>
           <h3>{purchase.name}</h3>
         </div>
-        <strong>{currency.format(purchase.targetPrice)}</strong>
-        <p>{purchase.notes || `Preço alvo em ${purchase.store || 'loja a definir'}.`}</p>
+        <div className="purchase-price-row">
+          <strong>{getPurchasePriceLabel(purchase)}</strong>
+          {hasPrice && purchase.isPromotionalPrice && <span className="promo-chip">Promoção</span>}
+        </div>
+        <p>{purchase.notes || priceHint}</p>
         <div className="purchase-footer">
           <span>{normalizedLink ? `${purchase.store || 'Abrir produto'} · link salvo` : purchase.store || 'Loja aberta'}</span>
           <div className="row-actions">
@@ -2721,12 +2750,45 @@ function PurchaseCard({
 }
 
 function PurchaseModal({ purchase, categories, onClose, onSave }) {
-  const [form, setForm] = useState(purchase || emptyPurchase);
+  const [form, setForm] = useState(() => ({ ...emptyPurchase, ...(purchase || {}) }));
   const [imageMode, setImageMode] = useState(form.image?.startsWith('data:') ? 'device' : 'url');
   const [imageFileName, setImageFileName] = useState('');
+  const [autoStoreNotice, setAutoStoreNotice] = useState('');
+  const autoStoreRef = useRef(purchase?.store || '');
   const fileInputRef = useRef(null);
+  const hasPrice = hasSpecifiedPurchasePrice(form);
 
   const setField = (field, value) => setForm((current) => ({ ...current, [field]: value }));
+  const setStore = (value) => {
+    setAutoStoreNotice('');
+    autoStoreRef.current = '';
+    setField('store', value);
+  };
+
+  const setLink = (value) => {
+    setForm((current) => {
+      const detectedStore = detectStoreNameFromLink(value);
+      const currentStore = String(current.store || '').trim();
+      const canAutoFill = detectedStore && (!currentStore || currentStore === autoStoreRef.current);
+
+      if (!canAutoFill) {
+        return { ...current, link: value };
+      }
+
+      autoStoreRef.current = detectedStore;
+      setAutoStoreNotice(`Loja preenchida automaticamente como "${detectedStore}". Você pode alterar se estiver errado.`);
+
+      return { ...current, link: value, store: detectedStore };
+    });
+  };
+
+  const setPriceMode = (priceMode) =>
+    setForm((current) => ({
+      ...current,
+      priceMode,
+      targetPrice: priceMode === 'unspecified' ? '' : current.targetPrice,
+      isPromotionalPrice: priceMode === 'unspecified' ? false : current.isPromotionalPrice
+    }));
 
   const handleImageFile = (event) => {
     const file = event.target.files?.[0];
@@ -2742,7 +2804,12 @@ function PurchaseModal({ purchase, categories, onClose, onSave }) {
 
   const handleSubmit = (event) => {
     event.preventDefault();
-    onSave(form);
+    onSave({
+      ...form,
+      priceMode: hasPrice ? 'specified' : 'unspecified',
+      targetPrice: hasPrice ? form.targetPrice : '',
+      isPromotionalPrice: hasPrice && Boolean(form.isPromotionalPrice)
+    });
   };
 
   return (
@@ -2752,17 +2819,40 @@ function PurchaseModal({ purchase, categories, onClose, onSave }) {
           <span>Produto</span>
           <input required value={form.name} onChange={(event) => setField('name', event.target.value)} placeholder="Ex.: Notebook novo" />
         </label>
-        <label className="field">
-          <span>Preço alvo</span>
-          <input
-            required
-            min="0"
-            step="0.01"
-            type="number"
-            value={form.targetPrice}
-            onChange={(event) => setField('targetPrice', event.target.value)}
-          />
-        </label>
+        <div className="price-options wide-field">
+          <label className="field price-mode-field">
+            <span>Tipo de preço</span>
+            <select
+              value={hasPrice ? 'specified' : 'unspecified'}
+              onChange={(event) => setPriceMode(event.target.value)}
+            >
+              <option value="specified">Informar preço</option>
+              <option value="unspecified">Não especificar</option>
+            </select>
+          </label>
+          <label className="field price-value-field">
+            <span>Preço alvo</span>
+            <input
+              required={hasPrice}
+              disabled={!hasPrice}
+              min="0"
+              step="0.01"
+              type="number"
+              value={form.targetPrice}
+              onChange={(event) => setField('targetPrice', event.target.value)}
+              placeholder={hasPrice ? 'Ex.: 129,90' : 'Preço a definir'}
+            />
+          </label>
+          <label className={`toggle-field promo-toggle ${!hasPrice ? 'disabled' : ''}`}>
+            <input
+              type="checkbox"
+              disabled={!hasPrice}
+              checked={Boolean(form.isPromotionalPrice) && hasPrice}
+              onChange={(event) => setField('isPromotionalPrice', event.target.checked)}
+            />
+            <span>Esse preço é de promoção</span>
+          </label>
+        </div>
         <label className="field">
           <span>Prioridade</span>
           <select value={form.priority} onChange={(event) => setField('priority', event.target.value)}>
@@ -2783,16 +2873,17 @@ function PurchaseModal({ purchase, categories, onClose, onSave }) {
         </label>
         <label className="field">
           <span>Loja</span>
-          <input value={form.store} onChange={(event) => setField('store', event.target.value)} placeholder="Loja preferida" />
+          <input value={form.store} onChange={(event) => setStore(event.target.value)} placeholder="Loja preferida" />
         </label>
         <label className="field wide-field">
           <span>Link do produto</span>
           <input
             value={form.link || ''}
-            onChange={(event) => setField('link', event.target.value)}
+            onChange={(event) => setLink(event.target.value)}
             placeholder="https://..."
           />
         </label>
+        {autoStoreNotice && <p className="inline-info wide-field">{autoStoreNotice}</p>}
         <div className="field wide-field">
           <div className="field-label-row">
             <span>Imagem</span>
@@ -3601,6 +3692,60 @@ function normalizeExternalLink(value) {
   }
 
   return `https://${trimmed}`;
+}
+
+function detectStoreNameFromLink(value) {
+  const normalizedUrl = normalizeExternalLink(value);
+  if (!normalizedUrl) return '';
+
+  try {
+    const host = new URL(normalizedUrl).hostname
+      .replace(/^www\./i, '')
+      .replace(/^m\./i, '')
+      .toLowerCase();
+    const parts = host.split('.').filter(Boolean);
+    const ignoredParts = new Set(['com', 'combr', 'br', 'net', 'org', 'io', 'app', 'store', 'shop']);
+    const knownStores = {
+      'amazon': 'Amazon',
+      'mercadolivre': 'Mercado livre',
+      'mercadolibre': 'Mercado livre',
+      'shopee': 'Shopee',
+      'aliexpress': 'Aliexpress',
+      'magazineluiza': 'Magalu',
+      'magalu': 'Magalu',
+      'kabum': 'Kabum',
+      'americanas': 'Americanas',
+      'casasbahia': 'Casas bahia',
+      'pontofrio': 'Ponto frio',
+      'netshoes': 'Netshoes',
+      'shein': 'Shein',
+      'decathlon': 'Decathlon',
+      'drogariavenancio': 'Drogaria venancio',
+      'drogaraia': 'Droga raia',
+      'drogasil': 'Drogasil',
+      'ifood': 'Ifood',
+      'steam': 'Steam',
+      'nuuvem': 'Nuuvem'
+    };
+    const candidate = parts.find((part) => knownStores[part]) || parts.find((part) => !ignoredParts.has(part));
+
+    if (!candidate) return '';
+    return knownStores[candidate] || capitalize(candidate.replace(/[-_]/g, ' '));
+  } catch {
+    return '';
+  }
+}
+
+function hasSpecifiedPurchasePrice(purchase) {
+  return (purchase?.priceMode || 'specified') !== 'unspecified';
+}
+
+function getPurchasePrice(purchase) {
+  return hasSpecifiedPurchasePrice(purchase) ? Number(purchase?.targetPrice || 0) : 0;
+}
+
+function getPurchasePriceLabel(purchase) {
+  return hasSpecifiedPurchasePrice(purchase) ? currency.format(getPurchasePrice(purchase)) : 'Preço a definir';
 }
 
 function formatReleaseNotes(releaseNotes) {

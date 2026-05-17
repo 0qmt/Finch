@@ -3,7 +3,7 @@
     "name": "Finch",
     "slug": "finch-sync-poc",
     "scheme": "com.finch.localsyncpoc",
-    "version": "0.1.13",
+    "version": "0.1.14",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
@@ -18,7 +18,7 @@
     },
     "android": {
       "package": "com.finch.localsyncpoc",
-      "versionCode": 13,
+      "versionCode": 14,
       "usesCleartextTraffic": true,
       "permissions": [
         "INTERNET",

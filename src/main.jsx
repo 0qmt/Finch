@@ -42,7 +42,7 @@ const STORAGE_KEY = 'finch:data:v1';
 const UPDATE_SNOOZE_KEY = 'finch:update-snoozed-until';
 const LOGO_URL = `${import.meta.env.BASE_URL}finch-logo.svg`;
 const APP_VERSION = packageJson.version;
-const OFFICIAL_VERSION = '0.1.12';
+const OFFICIAL_VERSION = '0.1.14';
 const IS_LOCAL_BUILD = import.meta.env.DEV;
 const APP_CHANNEL = IS_LOCAL_BUILD ? 'Alpha local' : 'Estável';
 
@@ -3349,7 +3349,7 @@ function SettingsPage({
         </div>
         {driveSyncState?.needsConfig && (
           <p className="inline-alert">
-            Para login Google real, adicione um OAuth Client em google-oauth.json na pasta de dados do Finch ou defina FINCH_GOOGLE_CLIENT_ID.
+            O Finch ja vem preparado para conectar ao Google Drive. Se o login falhar, confira se sua conta esta liberada no Google Cloud.
           </p>
         )}
         {driveSyncState?.state === 'conflict' && (

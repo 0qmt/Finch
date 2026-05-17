@@ -64,7 +64,7 @@ O desktop continua salvando `finch-data.json` localmente. Quando o usuario conec
 
 ### Configurar OAuth Google
 
-Para login Google real, crie um OAuth Client ID no Google Cloud e salve as credenciais em um destes locais:
+O Finch Desktop ja inclui a credencial OAuth usada pela release oficial. Para builds locais ou forks, voce tambem pode sobrescrever a credencial por:
 
 - variaveis de ambiente `FINCH_GOOGLE_CLIENT_ID` e `FINCH_GOOGLE_CLIENT_SECRET`;
 - arquivo `google-oauth.json` na pasta de dados do Finch;

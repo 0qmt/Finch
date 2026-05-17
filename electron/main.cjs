@@ -3,10 +3,12 @@ const { autoUpdater } = require('electron-updater');
 const fs = require('fs');
 const path = require('path');
 const packageJson = require('../package.json');
+const { FinchDriveSync } = require('./google/drive-sync.cjs');
 
 const isDev = !app.isPackaged;
 const iconPath = path.join(__dirname, '..', 'build', 'icon.ico');
 let mainWindow = null;
+let driveSync = null;
 let updateStatus = {
   state: 'idle',
   currentVersion: app.getVersion() || packageJson.version
@@ -74,6 +76,23 @@ function sendUpdateEvent(payload) {
   });
 }
 
+function sendDriveSyncEvent(payload) {
+  BrowserWindow.getAllWindows().forEach((window) => {
+    window.webContents.send('finch:drive-sync:event', payload);
+  });
+}
+
+function getDriveSync() {
+  if (!driveSync) {
+    driveSync = new FinchDriveSync({
+      userDataPath: app.getPath('userData'),
+      shell
+    });
+  }
+
+  return driveSync;
+}
+
 function formatUpdateInfo(info = {}) {
   return {
     version: info.version,
@@ -137,6 +156,64 @@ ipcMain.handle('finch:data:export-backup', async (_event, data) => {
       canceled: false,
       error: error.message
     };
+  }
+});
+
+ipcMain.handle('finch:drive-sync:connect', async () => {
+  try {
+    const status = await getDriveSync().connect();
+    sendDriveSyncEvent(status);
+    return status;
+  } catch (error) {
+    return { ok: false, state: 'error', error: error.message, cloudStatus: error.message };
+  }
+});
+
+ipcMain.handle('finch:drive-sync:disconnect', () => {
+  try {
+    const status = getDriveSync().disconnect();
+    sendDriveSyncEvent(status);
+    return status;
+  } catch (error) {
+    return { ok: false, state: 'error', error: error.message };
+  }
+});
+
+ipcMain.handle('finch:drive-sync:get-status', async () => {
+  try {
+    return await getDriveSync().getStatus();
+  } catch (error) {
+    return { ok: false, state: 'error', error: error.message, cloudStatus: error.message };
+  }
+});
+
+ipcMain.handle('finch:drive-sync:sync-now', async (_event, data) => {
+  try {
+    const status = await getDriveSync().syncNow(data);
+    sendDriveSyncEvent(status);
+    return status;
+  } catch (error) {
+    return { ok: false, state: 'error', error: error.message, cloudStatus: error.message };
+  }
+});
+
+ipcMain.handle('finch:drive-sync:use-local', async (_event, data) => {
+  try {
+    const status = await getDriveSync().syncNow(data, { force: 'local' });
+    sendDriveSyncEvent(status);
+    return status;
+  } catch (error) {
+    return { ok: false, state: 'error', error: error.message, cloudStatus: error.message };
+  }
+});
+
+ipcMain.handle('finch:drive-sync:use-remote', async (_event, data) => {
+  try {
+    const status = await getDriveSync().syncNow(data, { force: 'remote' });
+    sendDriveSyncEvent(status);
+    return status;
+  } catch (error) {
+    return { ok: false, state: 'error', error: error.message, cloudStatus: error.message };
   }
 });
 

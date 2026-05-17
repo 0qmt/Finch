@@ -13,6 +13,7 @@ import {
   ChevronDown,
   CircleDollarSign,
   Clock3,
+  Cloud,
   Download,
   Edit3,
   Eye,
@@ -21,6 +22,7 @@ import {
   LayoutDashboard,
   ListFilter,
   Plus,
+  RefreshCw,
   ReceiptText,
   Search,
   Settings,
@@ -478,7 +480,8 @@ function normalizeData(data) {
     settings,
     transactions,
     purchases,
-    goals: Array.isArray(data?.goals) ? data.goals : []
+    goals: Array.isArray(data?.goals) ? data.goals : [],
+    ...(data?.syncMetadata ? { syncMetadata: data.syncMetadata } : {})
   };
 }
 
@@ -488,6 +491,10 @@ function getDesktopStorage() {
 
 function getUpdateService() {
   return typeof window !== 'undefined' ? window.finchUpdates : null;
+}
+
+function getDriveSyncService() {
+  return typeof window !== 'undefined' ? window.finchDriveSync : null;
 }
 
 function isBrowserTestMode() {
@@ -533,8 +540,10 @@ function App() {
   const [guidedOverlay, setGuidedOverlay] = useState(null);
   const [tutorialActive, setTutorialActive] = useState(false);
   const [tutorialStep, setTutorialStep] = useState(0);
+  const [driveSyncState, setDriveSyncState] = useState(null);
   const [updateState, setUpdateState] = useState(null);
   const updateWasRequestedRef = useRef(false);
+  const driveSyncTimerRef = useRef(null);
 
   useEffect(() => {
     const desktopStorage = getDesktopStorage();
@@ -679,6 +688,45 @@ function App() {
       unsubscribe?.();
     };
   }, []);
+
+  useEffect(() => {
+    const driveSync = getDriveSyncService();
+    if (!driveSync?.getStatus) return undefined;
+
+    let active = true;
+    const applyDriveStatus = (status) => {
+      if (!active || !status) return;
+      setDriveSyncState(status);
+      if (status.downloadedData) {
+        setData(normalizeData(status.downloadedData));
+      }
+    };
+    const unsubscribe = driveSync.onEvent?.(applyDriveStatus);
+    driveSync.getStatus().then(applyDriveStatus).catch(() => {});
+
+    return () => {
+      active = false;
+      unsubscribe?.();
+    };
+  }, []);
+
+  useEffect(() => {
+    const driveSync = getDriveSyncService();
+    if (!storageReady || !driveSyncState?.connected || driveSyncState.state === 'conflict') return;
+    if (!driveSync?.syncNow) return;
+
+    clearTimeout(driveSyncTimerRef.current);
+    driveSyncTimerRef.current = setTimeout(() => {
+      driveSync.syncNow(data).then((status) => {
+        setDriveSyncState(status);
+        if (status?.uploadedData) {
+          setData((current) => ({ ...current, syncMetadata: status.uploadedData.syncMetadata }));
+        }
+      }).catch(() => {});
+    }, 1800);
+
+    return () => clearTimeout(driveSyncTimerRef.current);
+  }, [data, driveSyncState?.connected, driveSyncState?.state, storageReady]);
 
   const metrics = useMemo(() => calculateMetrics(data), [data]);
   const themeClass = `theme-${data.settings.theme
@@ -955,6 +1003,55 @@ function App() {
     updateSettings({ welcomeCompleted: false });
   };
 
+  const connectDriveSync = async () => {
+    const driveSync = getDriveSyncService();
+    if (!driveSync?.connect) {
+      setDriveSyncState({ ok: false, state: 'unavailable', cloudStatus: 'Sincronização Google Drive disponível apenas no app desktop.' });
+      return;
+    }
+    const status = await driveSync.connect();
+    setDriveSyncState(status);
+  };
+
+  const runDriveSyncNow = async () => {
+    const driveSync = getDriveSyncService();
+    if (!driveSync?.syncNow) return;
+    const status = await driveSync.syncNow(data);
+    setDriveSyncState(status);
+    if (status?.downloadedData) {
+      setData(normalizeData(status.downloadedData));
+    }
+    if (status?.uploadedData) {
+      setData((current) => ({ ...current, syncMetadata: status.uploadedData.syncMetadata }));
+    }
+  };
+
+  const disconnectDriveSync = async () => {
+    const driveSync = getDriveSyncService();
+    if (!driveSync?.disconnect) return;
+    setDriveSyncState(await driveSync.disconnect());
+  };
+
+  const useRemoteDriveData = async () => {
+    const driveSync = getDriveSyncService();
+    if (!driveSync?.useRemote) return;
+    const status = await driveSync.useRemote(data);
+    setDriveSyncState(status);
+    if (status?.downloadedData) {
+      setData(normalizeData(status.downloadedData));
+    }
+  };
+
+  const useLocalDriveData = async () => {
+    const driveSync = getDriveSyncService();
+    if (!driveSync?.useLocal) return;
+    const status = await driveSync.useLocal(data);
+    setDriveSyncState(status);
+    if (status?.uploadedData) {
+      setData((current) => ({ ...current, syncMetadata: status.uploadedData.syncMetadata }));
+    }
+  };
+
   const finishTutorial = () => {
     setGuidedOverlay(null);
     setTutorialActive(false);
@@ -1015,6 +1112,12 @@ function App() {
               onImportData={importData}
               onStartTutorial={startTutorial}
               onShowWelcome={showWelcome}
+              driveSyncState={driveSyncState}
+              onConnectDriveSync={connectDriveSync}
+              onRunDriveSyncNow={runDriveSyncNow}
+              onDisconnectDriveSync={disconnectDriveSync}
+              onUseRemoteDriveData={useRemoteDriveData}
+              onUseLocalDriveData={useLocalDriveData}
               storageMeta={storageMeta}
             />
           </main>
@@ -3072,7 +3175,22 @@ function MonthPicker({ value, onChange }) {
   );
 }
 
-function SettingsPage({ data, onUpdateSettings, onResetData, onClearData, onImportData, onStartTutorial, onShowWelcome, storageMeta }) {
+function SettingsPage({
+  data,
+  onUpdateSettings,
+  onResetData,
+  onClearData,
+  onImportData,
+  onStartTutorial,
+  onShowWelcome,
+  driveSyncState,
+  onConnectDriveSync,
+  onRunDriveSyncNow,
+  onDisconnectDriveSync,
+  onUseRemoteDriveData,
+  onUseLocalDriveData,
+  storageMeta
+}) {
   const initialClearOptions = {
     transactions: true,
     purchases: true,
@@ -3195,6 +3313,86 @@ function SettingsPage({ data, onUpdateSettings, onResetData, onClearData, onImpo
             <span>Estado</span>
             <strong>{APP_VERSION === OFFICIAL_VERSION && !IS_LOCAL_BUILD ? 'Atualizado' : 'Teste local'}</strong>
           </div>
+        </div>
+      </section>
+
+      <section className="panel full-width">
+        <PanelHeader
+          eyebrow="Google Drive"
+          title="Sincronização"
+          action={driveSyncState?.connected ? 'Conectado' : 'Não conectado'}
+        />
+        <div className="storage-status">
+          <Cloud size={18} />
+          <div>
+            <strong>Mantenha seus dados sincronizados entre computador e celular usando seu Google Drive.</strong>
+            <span>{driveSyncState?.cloudStatus || 'Conecte sua conta Google para criar a pasta Finch no seu Drive.'}</span>
+          </div>
+        </div>
+        <div className="version-grid sync-version-grid">
+          <div>
+            <span>Status</span>
+            <strong>{driveSyncState?.state || 'não conectado'}</strong>
+          </div>
+          <div>
+            <span>Última sincronização</span>
+            <strong>{driveSyncState?.lastSyncAt ? new Date(driveSyncState.lastSyncAt).toLocaleString('pt-BR') : 'Nunca'}</strong>
+          </div>
+          <div>
+            <span>Dispositivo atual</span>
+            <strong>{driveSyncState?.device?.name || 'Finch Desktop'}</strong>
+          </div>
+          <div>
+            <span>Dispositivos</span>
+            <strong>{driveSyncState?.devices?.length || 0}</strong>
+          </div>
+        </div>
+        {driveSyncState?.needsConfig && (
+          <p className="inline-alert">
+            Para login Google real, adicione um OAuth Client em google-oauth.json na pasta de dados do Finch ou defina FINCH_GOOGLE_CLIENT_ID.
+          </p>
+        )}
+        {driveSyncState?.state === 'conflict' && (
+          <div className="sync-conflict-box">
+            <strong>Conflito detectado</strong>
+            <span>{driveSyncState.conflict?.message}</span>
+            <div className="data-actions">
+              <button className="secondary-button" type="button" onClick={onUseRemoteDriveData}>
+                Baixar versão da nuvem
+              </button>
+              <button className="primary-button" type="button" onClick={onUseLocalDriveData}>
+                Manter versão deste computador
+              </button>
+            </div>
+          </div>
+        )}
+        {Boolean(driveSyncState?.devices?.length) && (
+          <div className="drive-device-list">
+            {driveSyncState.devices.map((device) => (
+              <article key={device.id}>
+                <strong>{device.name || 'Finch'}</strong>
+                <span>{device.platform} · {device.lastSeenAt ? new Date(device.lastSeenAt).toLocaleString('pt-BR') : 'sem acesso recente'}</span>
+              </article>
+            ))}
+          </div>
+        )}
+        <div className="data-actions">
+          <button className="primary-button" type="button" onClick={onConnectDriveSync}>
+            <Cloud size={18} />
+            {driveSyncState?.connected ? 'Reconectar conta' : 'Conectar Google Drive'}
+          </button>
+          <button className="secondary-button" type="button" onClick={onRunDriveSyncNow} disabled={!driveSyncState?.connected}>
+            <RefreshCw size={18} />
+            Sincronizar agora
+          </button>
+          <button className="secondary-button" type="button" onClick={exportData}>
+            <Download size={18} />
+            Exportar backup
+          </button>
+          <button className="danger-button" type="button" onClick={onDisconnectDriveSync} disabled={!driveSyncState?.connected}>
+            <X size={18} />
+            Desconectar
+          </button>
         </div>
       </section>
 

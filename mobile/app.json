@@ -1,0 +1,46 @@
+{
+  "expo": {
+    "name": "Finch",
+    "slug": "finch-sync-poc",
+    "scheme": "com.finch.localsyncpoc",
+    "version": "0.1.13",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#bcd7f5"
+    },
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "package": "com.finch.localsyncpoc",
+      "versionCode": 13,
+      "usesCleartextTraffic": true,
+      "permissions": [
+        "INTERNET",
+        "ACCESS_NETWORK_STATE"
+      ],
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#bcd7f5"
+      },
+      "edgeToEdgeEnabled": true
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "extra": {
+      "googleClientId": "781636353425-3ihfovvc5b8drv3i7qoph0m9ijvnrdbr.apps.googleusercontent.com",
+      "eas": {
+        "projectId": "477c7ca4-c5ab-4432-821b-008d5affbb83"
+      }
+    },
+    "plugins": [
+      "expo-web-browser"
+    ]
+  }
+}
